@@ -1,0 +1,10 @@
+{
+  "name": "imagefilter",
+  "author": ["Elvin"],
+  "version": "1.0.0",
+  "description": "Apply image effects (blur, grayscale, etc.) using the Jeyy Image API.",
+  "short": "Image manipulation via Jeyy API",
+  "tags": ["image", "manipulation", "jeyy"],
+  "requirements": ["aiohttp"],
+  "install_msg": "Thanks for installing imagefilter! Use `[p]imgmanip setkey YOUR_API_KEY` to configure your API key, get the api key here https://api.jeyy.xyz/docs"
+}
