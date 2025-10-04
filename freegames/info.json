@@ -1,0 +1,11 @@
+{
+  "name": "freegames",
+  "author": ["Elvin"],
+  "description": "Notifies a configurable role when new giveaways appear on GamerPower using rich embeds.",
+  "short": "GamerPower giveaway notifier with embeds",
+  "install_msg": "thanks for installing",
+  "requirements": [],
+  "tags": ["games", "giveaways", "notifications", "gamerpower"],
+  "permissions": ["send_messages", "embed_links", "manage_roles"],
+  "min_bot_version": "3.5.0"
+}
