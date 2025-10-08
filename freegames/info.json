@@ -3,7 +3,7 @@
   "author": ["Elvin"],
   "description": "Notifies a configurable role when new giveaways appear on GamerPower using rich embeds.",
   "short": "GamerPower giveaway notifier with embeds",
-  "install_msg": "thanks for installing",
+  "install_msg": "thanks for installing, If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)!",
   "requirements": [],
   "tags": ["games", "giveaways", "notifications", "gamerpower"],
   "permissions": ["send_messages", "embed_links", "manage_roles"],

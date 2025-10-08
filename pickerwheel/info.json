@@ -3,5 +3,6 @@
   "author": ["Elvin"],
   "version": "1.0.0",
   "description": "Manage multiple named wheels and spin a random option via an animated spinning-wheel GIF.",
+  "install_msg": "Thank you for installing! If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)!",
   "requirements": ["pillow", "imageio"]
 }

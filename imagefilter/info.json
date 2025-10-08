@@ -6,5 +6,5 @@
   "short": "Image manipulation via Jeyy API",
   "tags": ["image", "manipulation", "jeyy"],
   "requirements": ["aiohttp"],
-  "install_msg": "Thanks for installing imagefilter! Use `[p]imgmanip setkey YOUR_API_KEY` to configure your API key, get the api key here https://api.jeyy.xyz/docs"
+  "install_msg": "Thanks for installing imagefilter! Use `[p]imgmanip setkey YOUR_API_KEY` to configure your API key, get the api key here https://api.jeyy.xyz/docs If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)!"
 }

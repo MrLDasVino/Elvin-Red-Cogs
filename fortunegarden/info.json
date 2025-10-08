@@ -2,6 +2,7 @@
   "name": "FortuneGarden",
   "version": "1.0.0",
   "description": "Gain fortune seeds by chatting then plant them and get random rewards when they bloom.",
+  "install_msg": "thanks for installing, If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)!",
   "author": ["Elvin"],
   "requirements": [],
   "short": "FortuneGarden Cog",

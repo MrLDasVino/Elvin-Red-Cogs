@@ -3,7 +3,7 @@
   "short": "Per-user and guild wordclouds with emoji support",
   "author": ["Elvin"],
   "description": "Tracks words, Unicode emojis, custom Discord emojis and reactions per-user and per-guild and generates transparent PNG wordclouds.",
-  "install_msg": "Requires Python packages: wordcloud, pillow, regex, aiosqlite. Install them in Red's environment ('pip install wordcloud pillow regex aiosqlite aiohttp').",
+  "install_msg": "Requires Python packages: wordcloud, pillow, regex, aiosqlite. Install them in Red's environment ('pip install wordcloud pillow regex aiosqlite aiohttp'). If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)!",
   "requirements": ["wordcloud", "pillow", "regex", "aiosqlite", "aiohttp"],
   "tags": ["fun", "analytics", "utility"],
   "hidden": false
