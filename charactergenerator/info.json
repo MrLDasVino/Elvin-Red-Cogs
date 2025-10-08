@@ -1,0 +1,11 @@
+{
+  "name": "CharacterGenerator",
+  "author": ["Elvin"],
+  "description": "Generate quirky characters with backstories for roleplay or GM use",
+  "install_msg": "Thanks for installing CharacterGenerator! Use `[p]charactergenerate` to roll up a character. If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)!",
+  "short": "Random character generator",
+  "tags": ["character", "generator", "roleplay"],
+  "hidden": false,
+  "min_bot_version": "3.5.0",
+  "requirements": []
+}
