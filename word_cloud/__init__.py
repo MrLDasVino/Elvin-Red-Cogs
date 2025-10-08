@@ -1,0 +1,1 @@
+from .wcog import setup

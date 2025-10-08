@@ -1,0 +1,7 @@
+{
+  "name": "PickerWheel",
+  "author": ["Elvin"],
+  "version": "1.0.0",
+  "description": "Manage multiple named wheels and spin a random option via an animated spinning-wheel GIF.",
+  "requirements": ["pillow", "imageio"]
+}

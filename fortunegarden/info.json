@@ -1,0 +1,9 @@
+{
+  "name": "FortuneGarden",
+  "version": "1.0.0",
+  "description": "Plant fortune seeds by chatting and get random rewards when they bloom.",
+  "author": ["Elvin"],
+  "requirements": [],
+  "short": "FortuneGarden Cog",
+  "tags": ["fun", "economy", "games"]
+}
