@@ -18,6 +18,9 @@ Then install the cog you would like to use via
 
 Make sure to use the correct names for the cogs which are the names of the folders in this repo for example word_cloud or freegames, its case sensitive
 
+#Support Me
+If you enjoy my cogs and wish to support me then please consider donating via `Ko-Fi <https://ko-fi.com/dasvino>`_!
+
 
 
 
