@@ -387,7 +387,8 @@ class FortuneGarden(commands.Cog):
                     if reward_type == "currency":
                         amount = random.randint(MIN_CREDITS, MAX_CREDITS)
                         await bank.deposit_credits(member, amount)
-                        desc = f"💰 You received **{amount}** credits!"
+                        currency_name = await bank.get_currency_name(member.guild, amount)
+                        desc = f"💰 You received **{amount}** {currency_name}!"
                     elif reward_type == "prompt":
                         desc = f"🖋️ Prompt: {random.choice(PROMPTS)}"
                     elif reward_type == "fortune":
