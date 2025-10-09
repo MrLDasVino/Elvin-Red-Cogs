@@ -1,0 +1,8 @@
+{
+    "author" : ["Elvin"],
+    "install_msg" : "Thanks for installing my repo!.",
+    "name" : "Elvin-Red-Cogs",
+    "short" : "Some fun and useful cogs",
+    "description" : "A variety of cogs for redbot",
+    "tags" : ["fun", "functionalities", "image", "games"]
+}
