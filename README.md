@@ -5,7 +5,7 @@
 | FortuneGarden  | 1.0.0            | <details><summary>Fortune Garden</summary>Gain fortune seeds by chatting then plant them and get random rewards when they bloom.</details>                                                                                                                                     |
 | ImageFilter    | 1.0.0            | <details><summary>Image Filter</summary>Apply image effects (blur, Rain, etc.) using the Jeyy Image API.</details>                                                                                                                                                             |
 | PickerWheel    | 1.0.0            | <details><summary>Picker Wheel</summary>Manage multiple named wheels and spin a random option via an animated spinning-wheel GIF.</details>                                                                                                                                    |
-| WordCloud      | 1.0.0            | <details><summary>Word Cloud</summary>Tracks words, Unicode emojis, custom Discord emojis and reactions per-user and per-guild and generates transparent PNG wordclouds.</details>                                                                                             |
+| WordCloud      | 1.3.0            | <details><summary>Word Cloud</summary>Tracks words, Unicode emojis, custom Discord emojis and reactions per-user and per-guild and generates transparent PNG wordclouds.</details>                                                                                             |
 | CharacterGen   | 1.0.0            | <details><summary>Character Generator</summary>Generate quirky characters with backstories for roleplay or GM use.</details> 
 
 # Installation
