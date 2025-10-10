@@ -11,10 +11,10 @@
 # Installation
 
 First add the repo via
-`[p]repo add MrLDasVino https://github.com/MrLDasVino/Elvin-Red-Cogs`
+`[p]repo add elvin-red-cogs https://github.com/MrLDasVino/Elvin-Red-Cogs`
 
 Then install the cog you would like to use via
-`[p]cog install MrLDasVino <cog name>`
+`[p]cog install elvin-red-cogs <cog name>`
 
 Make sure to use the correct names for the cogs which are the names of the folders in this repo for example word_cloud or freegames, its case sensitive
 
