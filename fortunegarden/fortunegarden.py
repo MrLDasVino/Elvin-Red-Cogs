@@ -1,9 +1,12 @@
 import random
+import logging
 from datetime import datetime, timedelta
 
 import discord
 from discord.ext import tasks
 from redbot.core import commands, Config, bank
+
+log = logging.getLogger(__name__)
 
 # Banner image URLs – replace these placeholders with your actual image links
 SEED_BANNER = "https://files.catbox.moe/i1787b.png"
@@ -360,83 +363,103 @@ class FortuneGarden(commands.Cog):
         default_member = {"seeds": 0, "last_earned": None}
         self.config.register_guild(**default_guild)
         self.config.register_member(**default_member)
+        
+    def cog_load(self):
         self.bloom_loop.start()
 
     def cog_unload(self):
-        self.bloom_loop.cancel()
+        self.bloom_loop.cancel()        
 
     @tasks.loop(seconds=60.0)
     async def bloom_loop(self):
+        """Process seeds that are due, one guild at a time."""
         now = datetime.utcnow()
         all_guilds = await self.config.all_guilds()
 
         for guild_id, data in all_guilds.items():
             fortunes = data["fortunes"]
             min_amt = data.get("min_credits", MIN_CREDITS)
-            max_amt = data.get("max_credits", MAX_CREDITS)            
+            max_amt = data.get("max_credits", MAX_CREDITS)
             changed = False
 
             for fid, info in list(fortunes.items()):
-                # skip already processed or not yet due
                 bloom_dt = datetime.fromisoformat(info["bloom_time"])
                 if info.get("processed") or now < bloom_dt:
                     continue
 
+                # —— resolve guild/channel/member with cache-then-fetch ——
+                guild = self.bot.get_guild(int(guild_id))
+                if not guild:
+                    fortunes.pop(fid); changed = True; continue
+
+                ch_id = info["channel_id"]
+                channel = guild.get_channel(ch_id)
+                if not channel:
+                    try:
+                        channel = await self.bot.fetch_channel(ch_id)
+                    except discord.NotFound:
+                        fortunes.pop(fid); changed = True; continue
+
+                owner_id = info["owner_id"]
+                member = guild.get_member(owner_id)
+                if not member:
+                    try:
+                        member = await guild.fetch_member(owner_id)
+                    except discord.NotFound:
+                        fortunes.pop(fid); changed = True; continue
+
+                # —— pick & send reward ——  
                 try:
-                    guild = self.bot.get_guild(int(guild_id))
-                    channel = guild and guild.get_channel(info["channel_id"])
-                    member = guild and guild.get_member(info["owner_id"])
+                    reward_types = ["currency", "prompt", "fortune", "advice"]
+                    reward_type = random.choice(reward_types)
 
-                    if not channel or not member:
-                        # channel/guild/member gone → drop the seed
-                        fortunes.pop(fid)
-                        changed = True
-                        continue
+                    # build embed & set banner
+                    embed = discord.Embed(colour=discord.Colour.random())
+                    embed.set_image(url=REWARD_BANNERS[reward_type])
 
-                    # pick reward
-                    reward_type = random.choice(["currency", "prompt", "fortune", "advice"])
                     if reward_type == "currency":
                         amount = random.randint(min_amt, max_amt)
                         await bank.deposit_credits(member, amount)
-                        currency = await bank.get_currency_name(member.guild, amount)
-                        desc = f"💰 You received **{amount}** {currency}!"
-                    elif reward_type == "prompt":
-                        desc = f"🖋️ Prompt: {random.choice(PROMPTS)}"
-                    elif reward_type == "fortune":
-                        desc = f"🔮 Fortune: {random.choice(FORTUNES)}"
-                    else:
-                        desc = f"💡 Advice: {random.choice(ADVICE)}"
+                        embed.title = "💰 Fortune Pays!"
+                        embed.add_field(name="Credits Earned", value=str(amount), inline=False)
 
-                    embed = discord.Embed(
-                        title="🌸 Your Fortune Seed Has Bloomed!",
-                        description=desc,
-                        colour=discord.Colour.random()
-                    )
-                    embed.set_image(url=REWARD_BANNERS[reward_type])
+                    elif reward_type == "prompt":
+                        embed.title = "✏️ Writing Prompt"
+                        embed.description = random.choice(PROMPTS)
+
+                    elif reward_type == "fortune":
+                        embed.title = "🔮 Fortune"
+                        embed.description = random.choice(FORTUNES)
+
+                    else:  # advice
+                        embed.title = "💡 Advice"
+                        embed.description = random.choice(ADVICE)
 
                     await channel.send(content=member.mention, embed=embed)
-
-                    # mark processed only after successful send
                     fortunes[fid]["processed"] = True
                     changed = True
 
+                except discord.HTTPException as http_exc:
+                    log.warning(f"Transient issue sending seed {fid}: {http_exc}")
+
                 except Exception as exc:
-                    # catch all errors, log if desired, and drop the bad seed
-                    # logging.warning(f"Failed to bloom seed {fid}: {exc}")
+                    log.error(f"Fatal error blooming seed {fid}: {exc}", exc_info=True)
                     fortunes.pop(fid)
                     changed = True
-                    
-            # —– cleanup: drop processed seeds older than 1 day —–
-            cleanup_threshold = now - timedelta(days=1)
+
+            # —— cleanup old processed seeds ——  
+            cutoff = now - timedelta(days=1)
             for fid, info in list(fortunes.items()):
-                if info.get("processed"):
-                    bloom_dt = datetime.fromisoformat(info["bloom_time"])
-                    if bloom_dt < cleanup_threshold:
-                        fortunes.pop(fid)
-                        changed = True                    
+                if info.get("processed") and datetime.fromisoformat(info["bloom_time"]) < cutoff:
+                    fortunes.pop(fid); changed = True
 
             if changed:
                 await self.config.guild_from_id(guild_id).fortunes.set(fortunes)
+
+    @bloom_loop.before_loop
+    async def before_bloom(self):
+        """Delay starting the bloom_loop until after ready."""
+        await self.bot.wait_until_ready()
 
 
     @commands.Cog.listener()
