@@ -587,3 +587,11 @@ class FortuneGarden(commands.Cog):
         await guild_conf.max_credits.set(max_amt)
         await ctx.send(f"✅ Fortune payout range updated to **{min_amt}**–**{max_amt}** credits.")
         
+    @commands.is_owner()
+    @commands.command(name="flushfortunes", help="Force the bloom_loop to run instantly.")
+    async def flushfortunes(self, ctx):
+        """Run one pass of bloom_loop right now."""
+        await self.bloom_loop()
+        await ctx.send("🔄 Fortune loop flushed. All past-due seeds have been processed.")
+        
+        
