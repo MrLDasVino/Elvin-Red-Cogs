@@ -425,6 +425,15 @@ class FortuneGarden(commands.Cog):
                     # logging.warning(f"Failed to bloom seed {fid}: {exc}")
                     fortunes.pop(fid)
                     changed = True
+                    
+            # —– cleanup: drop processed seeds older than 1 day —–
+            cleanup_threshold = now - timedelta(days=1)
+            for fid, info in list(fortunes.items()):
+                if info.get("processed"):
+                    bloom_dt = datetime.fromisoformat(info["bloom_time"])
+                    if bloom_dt < cleanup_threshold:
+                        fortunes.pop(fid)
+                        changed = True                    
 
             if changed:
                 await self.config.guild_from_id(guild_id).fortunes.set(fortunes)
