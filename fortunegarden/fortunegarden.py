@@ -8,6 +8,12 @@ from redbot.core import commands, Config, bank
 
 log = logging.getLogger(__name__)
 
+DEFAULT_DISCOVER_MSG = (
+    "{mention} 🌱 You discovered a fortune seed! "
+    "You now have **{seeds}** seed{plural}.  \n"
+    "Use `{prefix}plantfortune` to plant one!"
+)
+
 # Banner image URLs – replace these placeholders with your actual image links
 SEED_BANNER = "https://files.catbox.moe/i1787b.png"
 PLANT_BANNER = "https://files.catbox.moe/7btmdw.png"
@@ -124,7 +130,107 @@ PROMPTS = [
     "Write a letter from a citizen of a world with no shadows.",
     "Describe a machine that builds towers to the sky.",
     "Imagine a festival where people swap identities for a day.",
-    "Craft a scene where gravity is optional."
+    "Craft a scene where gravity is optional.",
+    "Write a diary entry from a dragon observing a bustling human city.",
+    "Describe a marketplace where dreams are bought and sold.",
+    "Invent a ritual for greeting the sun and its symbolic meaning.",
+    "Create a conversation between two statues in a deserted park.",
+    "Write a scene where gravity flickers on and off randomly.",
+    "Sketch a world where shadows have personalities and walk away.",
+    "Describe a library that organizes books by emotions.",
+    "Imagine a festival celebrating the migration of whales across the sky.",
+    "Write a letter from a time traveler stuck in the wrong era.",
+    "Describe a potion that changes memories into visible holograms.",
+    "Invent a sport played underwater by merfolk.",
+    "Write a backstage diary of a puppet told by the puppet.",
+    "Create a 75-word scene set in an elevator that never reaches the top.",
+    "Describe a dimension where colors are sounds and sounds are colors.",
+    "Write a conversation between a river and the clouds.",
+    "Imagine a city built inside a volcano and its daily life.",
+    "Sketch a portrait of a person through the eyes of a painting.",
+    "Write a flash fiction about a letter that writes back.",
+    "Describe the taste of the wind on different days.",
+    "Invent a holiday celebrating forgotten songs.",
+    "Create a dialogue between a starship AI and a sentient star.",
+    "Write a monologue from an abandoned amusement park ride.",
+    "Describe a dream where you meet your earliest self.",
+    "Imagine a world where everyone carries a personal soundtrack.",
+    "Write a scene at a restaurant for mythical creatures.",
+    "Invent a machine that weaves stories into cloth.",
+    "Sketch a tale told by a pebble at the bottom of a well.",
+    "Describe a garden where statues bloom like flowers.",
+    "Write a letter from someone who lives on a cloud.",
+    "Create a mystery with only one clue: a broken mirror shard.",
+    "Imagine a society where words appear visually in the air.",
+    "Write a 120-word flashback of the last human on Mars.",
+    "Describe a library whose books whisper secrets.",
+    "Invent a board game that decides fates.",
+    "Sketch a world where time flows backwards at night.",
+    "Write about a musician whose instrument controls nature.",
+    "Describe a mask that grants its wearer another identity.",
+    "Imagine an island made entirely of glass and its perils.",
+    "Create a dialogue between two constellations.",
+    "Write a scene where letters fall from the sky like rain.",
+    "Describe a city where buildings rearrange themselves daily.",
+    "Invent a device that records your dreams to play back.",
+    "Write a poem about the space between two raindrops.",
+    "Sketch a chase scene through a maze of mirrors.",
+    "Describe a library that lends out emotions instead of books.",
+    "Write a conversation between a comet and a planet.",
+    "Imagine a carnival that appears only at midnight.",
+    "Create a mystery set in a silent music hall.",
+    "Describe a potion that lets you taste the past.",
+    "Write a story told entirely through diary entries of an AI.",
+    "Sketch a day in the life of a ghost tour guide.",
+    "Invent a language based on dance movements.",
+    "Describe a world where dreams and reality merge at dawn.",
+    "Write a scene in a theater where the audience is the show.",
+    "Imagine a city where everyone lives on rooftops.",
+    "Create a dialogue between a lighthouse and the sea.",
+    "Write a flash fiction about a book that fades as you read.",
+    "Describe a festival celebrating the last leaf of autumn.",
+    "Invent a graffiti that comes to life at night.",
+    "Sketch a conversation between a painter and their painting.",
+    "Write a monologue from a key lost in a forest.",
+    "Describe a spaceship’s log entry from a one-way mission.",
+    "Imagine a market where emotions are barter items.",
+    "Create an 80-word flashback in a desert temple.",
+    "Write a letter from the moon to the sun.",
+    "Sketch a world where seasons have wardrobes.",
+    "Describe a rainstorm made of light.",
+    "Invent a creature that farms stardust.",
+    "Write a scene where people communicate through colors.",
+    "Imagine a game played on the rings of Saturn.",
+    "Create a dialogue between a tree and its own reflection.",
+    "Write a mystery that unfolds through postcards.",
+    "Describe a banquet attended by legendary heroes.",
+    "Invent a device that translates animal thoughts.",
+    "Sketch a journey through a tunnel of echoes.",
+    "Write a letter from an explorer on an ocean of glass.",
+    "Describe a city where inhabitants switch bodies weekly.",
+    "Imagine a library hidden beneath a waterfall.",
+    "Create a poem about footprints in the sand that vanish.",
+    "Write a scene set in a train station that spans dimensions.",
+    "Describe a mirror that shows future selves.",
+    "Invent a festival where people share smells instead of stories.",
+    "Sketch a conversation between two memories.",
+    "Write a flash fiction about a star that fell in love.",
+    "Describe an island that sings ancient songs.",
+    "Imagine a ship that sails on desert dunes.",
+    "Create a dialogue between a dream and a nightmare.",
+    "Write a letter to someone who never existed.",
+    "Describe a candle that burns memories instead of wax.",
+    "Invent a sport where players ride lightning bolts.",
+    "Sketch a chase inside a collapsing library.",
+    "Write a scene where you meet the person you’ll become.",
+    "Describe a festival celebrating the birth of rivers.",
+    "Imagine a world where laughter is visible as color.",
+    "Create a mystery about a disappearing river.",
+    "Write a poem about the echo of a song long forgotten.",
+    "Describe a machine that builds bridges between thoughts.",
+    "Invent a city that rearranges itself based on dreams.",
+    "Sketch a day in the life of a cloud painter.",
+    "Write a story that begins at sunrise and ends at sunset."    
 ]
     
 FORTUNES = [
@@ -232,7 +338,98 @@ FORTUNES = [
     "A new goal will inspire you.",
     "Your journey will take a positive turn.",
     "A small victory will boost your confidence.",
-    "Your optimism will attract wonderful surprises."
+    "Your optimism will attract wonderful surprises.",
+    "A heartfelt compliment will come your way soon.",
+    "You will find joy in an unexpected place.",
+    "A new skill will open a door for you.",
+    "Your generosity will inspire someone today.",
+    "Adventure awaits if you step outside your comfort zone.",
+    "You will uncover a surprising truth.",
+    "A small habit change will yield big results.",
+    "Someone’s act of kindness will brighten your day.",
+    "You will solve a problem you’ve been avoiding.",
+    "A creative spark will lead to a breakthrough.",
+    "Your positive energy will be contagious.",
+    "An old dream will rekindle your passion.",
+    "You will meet someone who shares your vision.",
+    "A quiet moment will bring you clarity.",
+    "Trust will grow in an important relationship.",
+    "You will discover strength you didn’t know you had.",
+    "A spontaneous decision will lead to fun.",
+    "You will achieve more than you expect today.",
+    "Your insight will help someone in need.",
+    "A piece of advice will change your perspective.",
+    "You will accomplish a task faster than planned.",
+    "A surprise gift will arrive just when you need it.",
+    "Your hard work will be publicly acknowledged.",
+    "You will make a decision that feels like destiny.",
+    "A fresh idea will energize your next project.",
+    "You will find balance between work and play.",
+    "A simple gesture will deepen a friendship.",
+    "You will gain respect through your honesty.",
+    "A moment of patience will pay off richly.",
+    "Your kindness will return to you tenfold.",
+    "You will unlock a hidden talent today.",
+    "An important message arrives when you least expect it.",
+    "You will find peace in a busy day.",
+    "A challenge will strengthen your resolve.",
+    "You will inspire someone without realizing it.",
+    "A new book will give you valuable insight.",
+    "You will create something truly memorable.",
+    "A kind word will have a lasting impact.",
+    "You will reconnect with someone meaningful.",
+    "A healthful habit will transform your routine.",
+    "Your laughter will lift someone’s spirits.",
+    "You will receive support when you ask for it.",
+    "A chance opportunity will advance your goals.",
+    "Your instincts will guide you to success.",
+    "You will experience a moment of pure joy.",
+    "A thoughtful gesture will bridge a gap.",
+    "You will find clarity in a complex situation.",
+    "A new perspective will emerge from a conversation.",
+    "Your efforts will ripple outward positively.",
+    "You will be pleasantly surprised by progress.",
+    "A secret talent will reveal itself to you.",
+    "You will find comfort in a cherished memory.",
+    "A small victory will boost your confidence.",
+    "You will create a lasting memory today.",
+    "A difficult decision will become clear.",
+    "You will receive encouragement from an ally.",
+    "A fresh start will feel exhilarating.",
+    "You will accomplish a goal you set aside.",
+    "A reassuring word will ease your mind.",
+    "You will discover unexpected resources.",
+    "A long-term project will reach a milestone.",
+    "You will find inspiration in the everyday.",
+    "A positive change is on the horizon.",
+    "You will be recognized for your efforts.",
+    "A moment of silence will bring inner peace.",
+    "You will take the lead when needed.",
+    "A new connection will enrich your network.",
+    "You will find beauty in simplicity.",
+    "A timely suggestion will prove invaluable.",
+    "You will experience meaningful growth today.",
+    "A small risk will lead to great reward.",
+    "You will learn something that changes your path.",
+    "A moment of generosity will be remembered.",
+    "You will gain clarity through reflection.",
+    "A creative collaboration will spark magic.",
+    "You will find joy in helping others.",
+    "A simple change will lift your spirits.",
+    "You will navigate a challenge with grace.",
+    "A supportive friend will reach out soon.",
+    "You will make meaningful progress today.",
+    "A fresh idea will invigorate your mind.",
+    "You will discover a path you hadn’t seen.",
+    "A moment of courage will bring success.",
+    "You will find peace in an unexpected moment.",
+    "A kind gesture will warm your heart.",
+    "You will accomplish more than you imagined.",
+    "A joyful reunion is coming your way.",
+    "You will receive good news via message.",
+    "A moment of reflection will guide you forward.",
+    "You will shine in a team effort today.",
+    "A new opportunity will present itself soon."        
 ]
     
 ADVICE = [
@@ -340,7 +537,106 @@ ADVICE = [
     "Value progress over immediate perfection.",
     "Take mindful pauses before making big choices.",
     "Keep a learner’s curiosity in every situation.",
-    "Remind yourself that every day is a fresh start."
+    "Remind yourself that every day is a fresh start.",
+    "Set micro-goals to build momentum.",
+    "Begin each morning with a brief meditation.",
+    "Use the two-minute rule for quick tasks.",
+    "Batch similar tasks to conserve mental energy.",
+    "Keep a brain-dump notebook within reach.",
+    "Schedule buffer time between appointments.",
+    "Reflect on your achievements at week’s end.",
+    "Practice gratitude journaling every evening.",
+    "Delegate tasks that don’t require your focus.",
+    "Turn off non-essential notifications.",
+    "Use a timer to maintain deep focus.",
+    "Take a short walk after long screen sessions.",
+    "Plan your meals to reduce decision fatigue.",
+    "Learn to say no to protect your priorities.",
+    "Read something inspiring each day.",
+    "Stay hydrated to keep your mind clear.",
+    "Tackle your hardest task first each morning.",
+    "Pause for three deep breaths when you feel stuck.",
+    "Block off “no meeting” time in your calendar.",
+    "Create a playlist that uplifts your mood.",
+    "Tidy your workspace at the end of each day.",
+    "Review tomorrow’s plan before lights-out.",
+    "Visualize success for five minutes each morning.",
+    "Stand and stretch every hour on the hour.",
+    "Unplug from screens an hour before bedtime.",
+    "Use positive affirmations to set your mindset.",
+    "Record one win in a journal before you sleep.",
+    "Keep a running idea list for future projects.",
+    "Practice active listening in every conversation.",
+    "Turn setbacks into stepping stones for growth.",
+    "Set and honor clear personal deadlines.",
+    "Reward progress, not just final outcomes.",
+    "Spend time outdoors to recharge your spirit.",
+    "Display your long-term goals where you’ll see them.",
+    "Break large projects into weekly milestones.",
+    "Say “thank you” to someone each day.",
+    "Cultivate curiosity by asking “why?” often.",
+    "Try a new hobby to refresh your mind.",
+    "Design a morning routine that energizes you.",
+    "End each day with a moment of reflection.",
+    "Write down one thing you’re proud of daily.",
+    "Check in with your monthly goals regularly.",
+    "Streamline routines with simple checklists.",
+    "Use color-coded notes to highlight priorities.",
+    "Limit multitasking to stay fully present.",
+    "Perform a small act of kindness each day.",
+    "Join a community for mutual inspiration.",
+    "Reserve time for creative, unstructured play.",
+    "Capture quick thoughts with voice memos.",
+    "Arrange your desk to inspire better focus.",
+    "Move around when you need a mental reset.",
+    "Set aside a weekly reading hour.",
+    "Disable auto-play on video platforms.",
+    "Block regular breaks in your daily plan.",
+    "Choose analog tools to give your eyes a rest.",
+    "Clear one email at a time to avoid overwhelm.",
+    "Write thank-you notes to express your gratitude.",
+    "Use reminders for your self-care appointments.",
+    "Practice guided imagery to calm your mind.",
+    "Plan your upcoming week each Sunday evening.",
+    "Breathe mindfully before making big decisions.",
+    "Keep commitments small to ensure completion.",
+    "Track new habits to reinforce consistency.",
+    "Reflect on feedback to fuel your professional growth.",
+    "Meditate on your goals at least once a week.",
+    "Collect inspiring quotes in a dedicated journal.",
+    "Adopt a minimalist approach to your tasks.",
+    "Set time limits to avoid perfectionism traps.",
+    "Sip tea mindfully and appreciate the moment.",
+    "Find a mentor to guide your journey.",
+    "Listen to a podcast that expands your thinking.",
+    "Spend one day away from your phone monthly.",
+    "Map out ideas with a simple mind-map.",
+    "Balance productivity with restorative rest.",
+    "Schedule “thinking time” for big-picture ideas.",
+    "Take creative breaks by sketching or doodling.",
+    "Practice empathy by imagining others’ perspectives.",
+    "Leave work signals behind after office hours.",
+    "Save inspiring images in a mood-board folder.",
+    "Color-code your calendar for visual clarity.",
+    "Find joy in the small routines of your day.",
+    "Write a weekly summary of lessons learned.",
+    "Ask open-ended questions to spark conversation.",
+    "Create a vision board to anchor your goals.",
+    "Offer your time generously to others.",
+    "Stick sticky notes where reminders are most useful.",
+    "Reflect on your energy levels each afternoon.",
+    "Try cold showers to boost alertness.",
+    "Organize digital files to reduce clutter stress.",
+    "Prioritize tasks by their long-term impact.",
+    "Learn one new skill every month.",
+    "Use positive self-talk during challenging moments.",
+    "Notice what activities energize you most.",
+    "Reserve five minutes for end-of-day reflection.",
+    "Partner with a friend for accountability check-ins.",
+    "Practice mindful eating during every meal.",
+    "Block deep-work sessions in your schedule.",
+    "Keep a success log to celebrate daily wins.",
+    "Detach from outcomes to reduce performance anxiety."        
 ]
     
 MIN_CREDITS = 100
@@ -359,6 +655,7 @@ class FortuneGarden(commands.Cog):
             "fortunes": {},
             "min_credits": MIN_CREDITS,
             "max_credits": MAX_CREDITS,
+            "discover_message": None,  # None → fall back to DEFAULT_DISCOVER_MSG
         }
         default_member = {"seeds": 0, "last_earned": None}
         self.config.register_guild(**default_guild)
@@ -412,28 +709,60 @@ class FortuneGarden(commands.Cog):
                 try:
                     reward_types = ["currency", "prompt", "fortune", "advice"]
                     reward_type = random.choice(reward_types)
-
-                    # build embed & set banner
-                    embed = discord.Embed(colour=discord.Colour.random())
+            
+                    # build a unified, rich embed
+                    embed = discord.Embed(
+                        title="🌸 Your Fortune Seed Has Bloomed!",
+                        color=discord.Color.random(),
+                        timestamp=datetime.utcnow()
+                    )
+                    # show who it’s for
+                    embed.set_author(
+                        name=member.display_name,
+                        icon_url=member.avatar_url
+                    )
+                    # big illustration background
                     embed.set_image(url=REWARD_BANNERS[reward_type])
+                    # keep track of the seed
+                    embed.set_footer(text=f"Seed ID: {fid}")
 
                     if reward_type == "currency":
                         amount = random.randint(min_amt, max_amt)
                         await bank.deposit_credits(member, amount)
-                        embed.title = "💰 Fortune Pays!"
-                        embed.add_field(name="Credits Earned", value=str(amount), inline=False)
+    
+                        # fetch the guild’s currency name (singular, plural)
+                        singular, plural = await bank.get_currency_name(guild)
+                        label = singular if amount == 1 else plural
+    
+                        embed.add_field(
+                            name="💰 You received",
+                            value=f"**{amount}** {label}",
+                            inline=False
+                        )
 
                     elif reward_type == "prompt":
-                        embed.title = "✏️ Writing Prompt"
-                        embed.description = random.choice(PROMPTS)
+                        prompt = random.choice(PROMPTS)
+                        embed.add_field(
+                            name="✏️ Writing Prompt",
+                            value=f"> {prompt}",
+                            inline=False
+                        )
 
                     elif reward_type == "fortune":
-                        embed.title = "🔮 Fortune"
-                        embed.description = random.choice(FORTUNES)
+                        fortune = random.choice(FORTUNES)
+                        embed.add_field(
+                            name="🔮 Fortune",
+                            value=f"> {fortune}",
+                            inline=False
+                        )
 
-                    else:  # advice
-                        embed.title = "💡 Advice"
-                        embed.description = random.choice(ADVICE)
+                    else:  
+                        advice = random.choice(ADVICE)
+                        embed.add_field(
+                            name="💡 Advice",
+                            value=f"> {advice}",
+                            inline=False
+                        )
 
                     await channel.send(content=member.mention, embed=embed)
                     fortunes[fid]["processed"] = True
@@ -480,12 +809,19 @@ class FortuneGarden(commands.Cog):
             await member_conf.seeds.set(new_count)
             await member_conf.last_earned.set(now.isoformat())
     
+            guild_conf = self.config.guild(message.guild)
+            template = await guild_conf.discover_message() or DEFAULT_DISCOVER_MSG
+
+            # compute variables
             prefix = (await self.bot.get_prefix(message))[0]
-            await message.channel.send(
-                f"{message.author.mention} 🌱 You discovered a fortune seed! "
-                f"You now have **{new_count}** seed{'s' if new_count != 1 else ''}.\n"
-                f"Use `{prefix}plantfortune` to plant one!"
+            plural = "s" if new_count != 1 else ""
+            content = template.format(
+                mention=message.author.mention,
+                seeds=new_count,
+                plural=plural,
+                prefix=prefix
             )
+            await message.channel.send(content)
 
 
     @commands.guild_only()
@@ -625,5 +961,37 @@ class FortuneGarden(commands.Cog):
         """Run one pass of bloom_loop right now."""
         await self.bloom_loop()
         await ctx.send("🔄 Fortune loop flushed. All past-due seeds have been processed.")
+        
+    @commands.has_guild_permissions(manage_guild=True)
+    @commands.command(
+        name="setfortunemessage",
+        help=(
+            "Customize the discovery message.  \n"
+            "You may use these placeholders:\n"
+            "`{mention}` `{seeds}` `{plural}` `{prefix}`\n"
+            "Pass empty to reset to default."
+        )
+    )
+    async def setfortunemessage(self, ctx, *, template: str = None):
+        """
+        Examples:
+          • {mention} 🌱 You got {seeds} seed{plural}! Use {prefix}plantfortune to grow it.
+          • Congrats {mention}! {seeds} now in bag. Plant with {prefix}plantfortune.
+        """
+        # normalize empty → None
+        new_tmpl = template.strip() if template else None
+ 
+        # validate: must include {mention} and {seeds}
+        if new_tmpl and ("{mention}" not in new_tmpl or "{seeds}" not in new_tmpl):
+            return await ctx.send(
+                "⚠️ Your template must include **{mention}** and **{seeds}**."
+            )
+ 
+        await self.config.guild(ctx.guild).discover_message.set(new_tmpl)
+        if new_tmpl:
+            await ctx.send("✅ Fortune-discover message updated.")
+        else:
+            await ctx.send("✅ Fortune-discover message reset to default.")
+        
         
         
