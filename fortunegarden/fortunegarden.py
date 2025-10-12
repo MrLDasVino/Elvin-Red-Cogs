@@ -719,7 +719,7 @@ class FortuneGarden(commands.Cog):
                     # show who it’s for
                     embed.set_author(
                         name=member.display_name,
-                        icon_url=member.avatar_url
+                        icon_url=member.display_avatar.url
                     )
                     # big illustration background
                     embed.set_image(url=REWARD_BANNERS[reward_type])
