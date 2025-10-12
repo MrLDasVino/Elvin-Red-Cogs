@@ -730,8 +730,10 @@ class FortuneGarden(commands.Cog):
                         amount = random.randint(min_amt, max_amt)
                         await bank.deposit_credits(member, amount)
     
-                        # fetch the guild’s currency name (singular, plural)
-                        singular, plural = await bank.get_currency_name(guild)
+                        # fetch the guild’s currency name (singular, plural) — ignore any extras
+                        names = await bank.get_currency_name(guild)
+                        singular, plural = names[:2]
+                        
                         label = singular if amount == 1 else plural
     
                         embed.add_field(
