@@ -730,15 +730,11 @@ class FortuneGarden(commands.Cog):
                         amount = random.randint(min_amt, max_amt)
                         await bank.deposit_credits(member, amount)
     
-                        # fetch the guild’s currency name (singular, plural) — ignore any extras
-                        names = await bank.get_currency_name(guild)
-                        singular, plural = names[:2]
-                        
-                        label = singular if amount == 1 else plural
-    
+                        #  single-string API: pass `amount` to get the correct form
+                        currency_name = await bank.get_currency_name(guild, amount)
                         embed.add_field(
                             name="💰 You received",
-                            value=f"**{amount}** {label}",
+                            value=f"**{amount}** {currency_name}",
                             inline=False
                         )
 
