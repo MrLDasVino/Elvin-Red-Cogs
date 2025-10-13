@@ -781,7 +781,8 @@ class FortuneGarden(commands.Cog):
                     fortunes.pop(fid); changed = True
 
             if changed:
-                await self.config.guild_from_id(guild_id).fortunes.set(fortunes)
+                gid = int(guild_id)
+                await self.config.guild_from_id(gid).fortunes.set(fortunes)
 
     @bloom_loop.before_loop
     async def before_bloom(self):
