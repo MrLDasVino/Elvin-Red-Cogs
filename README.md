@@ -7,6 +7,7 @@
 | PickerWheel    | 1.0.0            | <details><summary>Picker Wheel</summary>Manage multiple named wheels and spin a random option via an animated spinning-wheel GIF.</details>                                                                                                                                    |
 | WordCloud      | 1.3.0            | <details><summary>Word Cloud</summary>Tracks words, Unicode emojis, custom Discord emojis and reactions per-user and per-guild and generates transparent PNG wordclouds.</details>                                                                                             |
 | CharacterGen   | 1.0.0            | <details><summary>Character Generator</summary>Generate quirky characters with backstories for roleplay or GM use.</details> 
+| MealDB         | 1.0.0            | <details><summary>Meal recipe database</summary>Fetch recipes via TheMealDB API.</details> 
 
 # Installation
 

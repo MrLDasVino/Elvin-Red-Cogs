@@ -1,0 +1,10 @@
+{
+  "name": "MealDB",
+  "version": "1.0.0",
+  "description": "Fetch recipes via TheMealDB API.",
+  "author": ["Elvin"],
+  "requirements": ["aiohttp"],
+  "tags": ["cooking", "recipes", "utility"],
+  "install_msg": "Thank you for installing the MealDB cog. If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)!",
+  "end_user_data_statement": "This cog does not persist any personal data."
+}
