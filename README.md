@@ -8,6 +8,7 @@
 | WordCloud      | 1.3.0            | <details><summary>Word Cloud</summary>Tracks words, Unicode emojis, custom Discord emojis and reactions per-user and per-guild and generates transparent PNG wordclouds.</details>                                                                                             |
 | CharacterGen   | 1.0.0            | <details><summary>Character Generator</summary>Generate quirky characters with backstories for roleplay or GM use.</details> 
 | MealDB         | 1.0.0            | <details><summary>Meal recipe database</summary>Fetch recipes via TheMealDB API.</details> 
+| UrbanDictionary| 1.0.0            | <details><summary>Urban Dictionary Search</summary>Fetch definitions, examples, and user ratings via the Urban Dictionary API.</details> 
 
 # Installation
 

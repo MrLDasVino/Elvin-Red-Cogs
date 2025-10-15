@@ -1,0 +1,9 @@
+{
+  "name": "UrbanDictionary",
+  "short": "Lookup slang definitions from Urban Dictionary",
+  "description": "Fetch definitions, examples, and user ratings via the Urban Dictionary API.",
+  "author": ["Elvin"],
+  "install_msg": "Thank you for installing. Use [p]urban <term> or [p]urban random. If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)!",
+  "requirements": ["aiohttp"],
+  "tags": ["utility", "fun"]
+}
