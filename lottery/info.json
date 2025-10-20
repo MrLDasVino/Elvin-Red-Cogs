@@ -1,0 +1,9 @@
+{
+  "name": "Lottery",
+  "version": "1.0.0",
+  "description": "A bank-backed lottery system with buy, inventory, manage, and draw commands, supports multiple lotteries and reward types, uses buttons and modals for easy use.",
+  "author": ["Elvin"],
+  "install_msg": "Thanks for installing the Lottery cog! use (p)lottery to see all commands, If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)!",
+  "requirements": [],
+  "tags": ["economy", "fun", "gambling"]
+}
