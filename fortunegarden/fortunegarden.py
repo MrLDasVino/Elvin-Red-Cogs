@@ -657,7 +657,7 @@ class FortuneGarden(commands.Cog):
             "max_credits": MAX_CREDITS,
             "discover_message": None,  # None → fall back to DEFAULT_DISCOVER_MSG
         }
-        default_member = {"seeds": 0, "last_earned": None}
+        default_member = {"seeds": 0, "last_earned": None, "opt_out": False}
         self.config.register_guild(**default_guild)
         self.config.register_member(**default_member)
         
@@ -794,20 +794,25 @@ class FortuneGarden(commands.Cog):
     async def on_message(self, message):
         if message.author.bot or not message.guild:
             return
-    
+
         member_conf = self.config.member(message.author)
         data = await member_conf.all()
+
+        # Respect opt-out: do not award seeds to opted-out members
+        if data.get("opt_out"):
+            return
+
         last = data["last_earned"]
         now = datetime.utcnow()
-    
+
         if last and now - datetime.fromisoformat(last) < timedelta(hours=5):
             return
-    
+
         if random.random() < 0.05:
             new_count = data["seeds"] + 1
             await member_conf.seeds.set(new_count)
             await member_conf.last_earned.set(now.isoformat())
-    
+
             guild_conf = self.config.guild(message.guild)
             template = await guild_conf.discover_message() or DEFAULT_DISCOVER_MSG
 
@@ -993,4 +998,52 @@ class FortuneGarden(commands.Cog):
             await ctx.send("✅ Fortune-discover message reset to default.")
         
         
+    @commands.guild_only()
+    @commands.command(
+        name="seedopt",
+        help="Manage receiving fortune seeds. Usage: seedopt off|on|status|help"
+    )
+    async def seedopt(self, ctx, choice: str = None):
+        """
+        seedopt off    -> stop receiving seeds (opt out)
+        seedopt on     -> start receiving seeds again (opt in)
+        seedopt status -> show current opt state
+        seedopt help   -> show this help / instructions
+        """
+        member_conf = self.config.member(ctx.author)
+        current = await member_conf.opt_out()
+    
+        if choice is None:
+            choice = "help"
+        choice = choice.lower()
+    
+        if choice in ("help", "h"):
+            help_text = (
+                "SeedOpt Help\n\n"
+                "• To stop receiving seeds, run: `seedopt off`\n"
+                "  This will opt you out; you will not be awarded seeds from chat.\n\n"
+                "• To start receiving seeds again, run: `seedopt on`\n\n"
+                "• To check your current setting, run: `seedopt status`\n\n"
+                "Notes: Opt-out is stored per-member and can be changed at any time."
+            )
+            return await ctx.send(help_text)
+    
+        if choice in ("off", "false", "optout", "out"):
+            if current:
+                return await ctx.send("✅ You are already opted out of receiving fortune seeds.")
+            await member_conf.opt_out.set(True)
+            return await ctx.send("🚫 You have opted out. You will no longer receive fortune seeds. Use `seedopt on` to opt back in.")
+    
+        if choice in ("on", "true", "optin", "in"):
+            if not current:
+                return await ctx.send("✅ You are already opted in to receiving fortune seeds.")
+            await member_conf.opt_out.set(False)
+            return await ctx.send("✅ You have opted in. You will now receive fortune seeds again. Use `seedopt off` to opt out.")
+    
+        if choice == "status":
+            status = "opted out" if current else "opted in"
+            return await ctx.send(f"ℹ️ You are currently **{status}** of receiving fortune seeds.")
+    
+        return await ctx.send("⚠️ Invalid option. Use `seedopt help` for instructions.")
+
         
