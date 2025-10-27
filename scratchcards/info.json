@@ -1,0 +1,15 @@
+{
+  "name": "ScratchCards",
+  "author": ["Elvin"],
+  "short": "Weighted multi-prize scratch card game integrated with Red's bank",
+  "description": "buy configurable scratch cards, win weighted prizes deposited to Red's bank. Includes an admin UI to create/edit cards and prizes via buttons and modals.",
+  "install_msg": "Thank you for installing! Use [p]scratch manage to create cards and [p]scratch to see all commands. Requires Red's bank to be enabled. If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)!",
+  "requirements": [],
+  "tags": [
+    "games",
+    "economy",
+    "fun",
+    "bank",
+    "scratch cards"
+  ]
+}
