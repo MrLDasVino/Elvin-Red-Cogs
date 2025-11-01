@@ -13,7 +13,8 @@
 | Lottery        | 1.0.0            | <details><summary>Lottery</summary>A bank-backed lottery system with buy, inventory, manage, and draw commands, supports multiple lotteries and reward types, uses buttons and modals for easy use..</details>
 | Wallhaven      | 1.0.0            | <details><summary>Wallhaven Wallpapers</summary>Fetch wallpapers from Wallhaven (random, search, category) with buttons and a dropdown. Guild-level NSFW toggle and owner config.</details> 
 | Reacter        | 1.1.1            | <details><summary>Reacter</summary>Randomly reacts to messages with server emojis (includes animated emojis). Admin commands to enable/disable and set frequency and amount.</details>
-| ScratchCards   | 1.2.4            | <details><summary>Scratch Cards</summary>buy configurable scratch cards, win weighted prizes deposited to Red's bank. Includes an admin UI to create/edit cards and prizes via buttons and modals.</details>  
+| ScratchCards   | 1.2.4            | <details><summary>Scratch Cards</summary>buy configurable scratch cards, win weighted prizes deposited to Red's bank. Includes an admin UI to create/edit cards and prizes via buttons and modals.</details> 
+| CardPacks      | 1.0.0            | <details><summary>Card Packs</summary>A simple to use collectible card pack minigame, create card packs and cards then pull cards from the packs using server currency, everything is customizable.</details>  
 
 # Installation
 
