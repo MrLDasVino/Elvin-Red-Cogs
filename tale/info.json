@@ -1,0 +1,9 @@
+{
+  "name": "Tale",
+  "author": ["Elvin"],
+  "description": "Choose your own adventure cog with import/export/manage features, create text based adventures to play",
+  "install_msg": "Thanks for installing use (p)tale to see all commands, a tutorial is provided via the example button under (p)tale manage, make sure to view whole file or download the file to see, If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)! ",
+  "version": "1.2.2",
+  "requirements": [],
+  "tags": ["fun", "adventure", "game", "tool"]
+}
