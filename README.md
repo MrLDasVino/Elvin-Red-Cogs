@@ -16,6 +16,7 @@
 | ScratchCards   | 1.2.4            | <details><summary>Scratch Cards</summary>buy configurable scratch cards, win weighted prizes deposited to Red's bank. Includes an admin UI to create/edit cards and prizes via buttons and modals.</details> 
 | CardPacks      | 1.0.0            | <details><summary>Card Packs</summary>A simple to use collectible card pack minigame, create card packs and cards then pull cards from the packs using server currency, everything is customizable.</details> 
 | Tale           | 1.2.2            | <details><summary>Tale</summary>Choose your own adventure cog with import/export/manage features, create text based adventures to play.</details>  
+| BattleRoyale   | 1.0.5            | <details><summary>Battleroyale</summary>BattleRoyale cog that can be customized in many ways.</details>
 
 # Installation
 

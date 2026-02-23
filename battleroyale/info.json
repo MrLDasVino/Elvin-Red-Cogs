@@ -1,0 +1,9 @@
+{
+  "name": "BattleRoyale",
+  "author": ["Elvin"],
+  "description": "A very customizable Battle Royale game.",
+  "install_msg": "thanks for installing, If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)!",
+  "short": "Battle Royale game",
+  "requirements": ["Pillow", "aiohttp"],
+  "tags": ["games", "fun", "battleroyale"]
+}
