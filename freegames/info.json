@@ -5,7 +5,7 @@
   "short": "GamerPower giveaway notifier with embeds",
   "install_msg": "thanks for installing, If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)!",
   "requirements": [],
-  "tags": ["games", "giveaways", "notifications", "gamerpower"],
+  "tags": ["games", "giveaways", "notifications", "gamerpower", "free", "freestuff"],
   "permissions": ["send_messages", "embed_links", "manage_roles"],
   "min_bot_version": "3.5.0"
 }
