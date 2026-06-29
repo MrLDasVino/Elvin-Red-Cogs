@@ -1,12 +1,15 @@
 import asyncio
 import random
 import io
+import math
+import logging
 import aiosqlite
 import regex as re
 from datetime import datetime
 
 import discord
-from PIL import Image, ImageDraw
+import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 import aiohttp
 from collections import OrderedDict
 from wordcloud import WordCloud
@@ -17,6 +20,8 @@ from redbot.core import commands, checks
 from discord.ext import tasks
 from redbot.core.bot import Red
 
+log = logging.getLogger("red.wordcloud")
+
 # Basic stopwords
 STOPWORDS = {
     "the", "and", "for", "that", "with", "you", "this", "have", "are",
@@ -26,16 +31,87 @@ STOPWORDS = {
 }
 
 # Emoji regexes
-UNICODE_EMOJI_RE = re.compile(r'(\p{Emoji_Presentation}|\p{Emoji}\uFE0F)', re.IGNORECASE)
+# Matches a single emoji "character" within a grapheme cluster (used together
+# with GRAPHEME_RE below so skin-tone modifiers, ZWJ sequences like family
+# emoji, flags, and keycaps (3️⃣) are grouped into one token instead of being
+# split into several).
+UNICODE_EMOJI_RE = re.compile(
+    r'(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Emoji}(?=\u20E3))'
+)
+# Splits text into grapheme clusters (user-perceived "characters"). Combined
+# with UNICODE_EMOJI_RE, this lets us detect whole emoji clusters atomically.
+GRAPHEME_RE = re.compile(r"\X")
 CUSTOM_EMOJI_RE = re.compile(r"<a?:([a-zA-Z0-9_]+):([0-9]{17,22})>")
 
 # Words only
 WORD_REGEX = re.compile(r"\b[^\W\d_]{2,}\b", flags=re.UNICODE)
 
+def is_emoji_token(token: str) -> bool:
+    """True for custom Discord emoji tokens or unicode emoji clusters."""
+    if token.startswith("custom_"):
+        return True
+    return UNICODE_EMOJI_RE.match(token) is not None
+
 def random_color_func(word, font_size, position, orientation, random_state=None, **kwargs):
     return "rgb({}, {}, {})".format(
         random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)
     )
+
+def build_shape_mask(shape: str, width: int, height: int):
+    """Build a numpy mask array for WordCloud's `mask` parameter.
+
+    WordCloud treats pure-white (255,255,255) pixels as "no text here" and
+    any other pixel as fillable area, so we draw a solid black shape on a
+    white background. Returns None for "none"/unrecognized shapes (no mask).
+    """
+    if not shape or shape == "none":
+        return None
+
+    img = Image.new("L", (width, height), 255)
+    draw = ImageDraw.Draw(img)
+    cx, cy = width / 2, height / 2
+
+    if shape == "circle":
+        r = min(width, height) / 2 * 0.95
+        draw.ellipse([cx - r, cy - r, cx + r, cy + r], fill=0)
+    elif shape == "square":
+        s = min(width, height) * 0.95
+        draw.rectangle([cx - s / 2, cy - s / 2, cx + s / 2, cy + s / 2], fill=0)
+    elif shape == "triangle":
+        h = height * 0.95
+        w = h * 1.1
+        pts = [(cx, cy - h / 2), (cx - w / 2, cy + h / 2), (cx + w / 2, cy + h / 2)]
+        draw.polygon(pts, fill=0)
+    elif shape == "star":
+        outer = min(width, height) / 2 * 0.95
+        inner = outer * 0.4
+        pts = []
+        for i in range(10):
+            ang = (math.pi / 2) + i * (math.pi / 5)
+            r = outer if i % 2 == 0 else inner
+            pts.append((cx + r * math.cos(ang), cy - r * math.sin(ang)))
+        draw.polygon(pts, fill=0)
+    elif shape == "heart":
+        pts = []
+        for t in range(0, 360, 2):
+            a = math.radians(t)
+            x = 16 * math.sin(a) ** 3
+            y = 13 * math.cos(a) - 5 * math.cos(2 * a) - 2 * math.cos(3 * a) - math.cos(4 * a)
+            pts.append((x, y))
+        xs = [p[0] for p in pts]
+        ys = [p[1] for p in pts]
+        minx, maxx = min(xs), max(xs)
+        miny, maxy = min(ys), max(ys)
+        scale = min(width / (maxx - minx), height / (maxy - miny)) * 0.9
+        pts2 = [
+            (cx + (x - (minx + maxx) / 2) * scale, cy - (y - (miny + maxy) / 2) * scale)
+            for x, y in pts
+        ]
+        draw.polygon(pts2, fill=0)
+    else:
+        return None
+
+    return np.array(img)
 
 class WordCloudCog(commands.Cog):
     AVAILABLE_SHAPES = ("none", "circle", "square", "triangle", "star", "heart")
@@ -43,7 +119,6 @@ class WordCloudCog(commands.Cog):
     def __init__(self, bot: Red):
         self.bot = bot
         self.db_ready = False
-
 
         self._session: aiohttp.ClientSession | None = None
         self._emoji_cache: OrderedDict[str, Image.Image] = OrderedDict()
@@ -54,13 +129,9 @@ class WordCloudCog(commands.Cog):
         data_folder.mkdir(parents=True, exist_ok=True)
         self.db_path = str(data_folder / "wordcloud_data.sqlite3")
 
-
-        self.bot.loop.create_task(self._ensure_db())
-
     async def cog_load(self):
-
+        await self._ensure_db()
         self._session = aiohttp.ClientSession()
-
         self.autogen_loop.start()
 
     def cog_unload(self):
@@ -121,6 +192,11 @@ class WordCloudCog(commands.Cog):
         if self.db_ready:
             return
         async with aiosqlite.connect(self.db_path) as db:
+            # WAL lets writes (incoming messages) proceed while a long-running
+            # read is open elsewhere (e.g. the autogen loop scanning counts and
+            # rendering an image), instead of queuing behind the default
+            # rollback-journal lock until the 5s busy_timeout expires.
+            await db.execute("PRAGMA journal_mode=WAL")
             await db.execute(
                 """CREATE TABLE IF NOT EXISTS counts (
                      guild_id INTEGER,
@@ -177,7 +253,7 @@ class WordCloudCog(commands.Cog):
             return
         await self.init_db()
         # skip ignored
-        async with aiosqlite.connect(self.db_path) as db:
+        async with aiosqlite.connect(self.db_path, timeout=10) as db:
             cur = await db.execute(
                 "SELECT 1 FROM ignored_channels WHERE guild_id = ? AND channel_id = ?",
                 (message.guild.id, message.channel.id),
@@ -188,18 +264,23 @@ class WordCloudCog(commands.Cog):
         raw = message.content or ""
         tokens = []
 
-        # custom emojis
+        # custom emojis, e.g. <:pog:123456789012345678>
         def repl_custom(m):
             name, eid = m.groups()
             tokens.append(f"custom_{name}:{eid}")
-            return ""
+            return " "
         text = CUSTOM_EMOJI_RE.sub(repl_custom, raw)
 
-        # unicode emojis
-        def repl_unicode(m):
-            tokens.append(m.group(0))
-            return ""
-        text = UNICODE_EMOJI_RE.sub(repl_unicode, text)
+        # unicode emojis — walk grapheme clusters so multi-codepoint emoji
+        # (skin tones, ZWJ family sequences, flags, keycaps like 3️⃣) are kept
+        # together as a single token instead of being split apart.
+        remaining_chars = []
+        for cluster in GRAPHEME_RE.findall(text):
+            if UNICODE_EMOJI_RE.search(cluster):
+                tokens.append(cluster)
+            else:
+                remaining_chars.append(cluster)
+        text = "".join(remaining_chars)
 
         # words
         for m in WORD_REGEX.finditer(text.lower()):
@@ -241,19 +322,42 @@ class WordCloudCog(commands.Cog):
         norm = [str(t)[:200] for t in tokens if t]
         if not norm:
             return
-        async with aiosqlite.connect(self.db_path) as db:
-            cur = await db.cursor()
-            for t in norm:
-                await cur.execute(
-                    """
-                    INSERT INTO counts(guild_id, user_id, token, count)
-                    VALUES(?, ?, ?, 1)
-                    ON CONFLICT(guild_id, user_id, token)
-                    DO UPDATE SET count = count + 1
-                    """,
-                    (guild_id, user_id, t),
+
+        # Retry on transient "database is locked" contention instead of
+        # letting it bubble up into discord.py's generic on_message error
+        # handler, where it gets logged once and the tokens are gone for
+        # good with no obvious sign anything was missed.
+        attempts = 3
+        for attempt in range(1, attempts + 1):
+            try:
+                async with aiosqlite.connect(self.db_path, timeout=10) as db:
+                    cur = await db.cursor()
+                    for t in norm:
+                        await cur.execute(
+                            """
+                            INSERT INTO counts(guild_id, user_id, token, count)
+                            VALUES(?, ?, ?, 1)
+                            ON CONFLICT(guild_id, user_id, token)
+                            DO UPDATE SET count = count + 1
+                            """,
+                            (guild_id, user_id, t),
+                        )
+                    await db.commit()
+                return
+            except aiosqlite.OperationalError:
+                if attempt == attempts:
+                    log.exception(
+                        "Giving up writing token counts for guild=%s user=%s after %d attempts",
+                        guild_id, user_id, attempts,
+                    )
+                    return
+                await asyncio.sleep(0.25 * attempt)
+            except Exception:
+                log.exception(
+                    "Unexpected error writing token counts for guild=%s user=%s",
+                    guild_id, user_id,
                 )
-            await db.commit()
+                return
 
     async def _get_frequencies_for_guild(self, guild_id: int):
         await self.init_db()
@@ -314,102 +418,203 @@ class WordCloudCog(commands.Cog):
         width: int = 1200,
         height: int = 675,
     ):
-        import numpy as np
-
         buf = io.BytesIO()
         if not frequencies:
             img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
             img.save(buf, format="PNG")
             buf.seek(0)
             return buf
-              
+
+        mask = build_shape_mask(mask_name, width, height)
 
         wc_kwargs = {
             "width": width,
             "height": height,
-            "margin": 0,            
+            "margin": 0,
             "mode": "RGBA",
             "background_color": None,
             "prefer_horizontal": 0.9,
             "collocations": False,
+            # Compresses the gap between the biggest and smallest font sizes
+            # so a few very frequent tokens don't dominate the canvas and
+            # leave large empty gaps around them; smaller words fill in
+            # tighter as a result. 'auto'/1.0 (the wordcloud default) is
+            # closer to true-proportional sizing but leaves much more
+            # whitespace on Zipfian-distributed chat data.
+            "relative_scaling": 0.5,
         }
+        if mask is not None:
+            wc_kwargs["mask"] = mask
+
+        # WordCloud sizes each placeholder's font from the LENGTH of its
+        # token string, not its frequency rank. Custom-emoji tokens like
+        # "custom_pog:123456789012345678" are long, so they'd be sized as if
+        # they were a long word and come out tiny regardless of how often
+        # they were used. Swap every emoji token for a short fixed-length
+        # surrogate before generating the layout, then map back to the real
+        # token afterwards, so font size reflects frequency correctly.
+        surrogate_to_token = {}
+        display_freqs = {}
+        counter = 0
+        for token, count in frequencies.items():
+            if is_emoji_token(token):
+                # A single Private-Use-Area character. Every PUA codepoint
+                # renders with the font's .notdef fallback glyph, which is
+                # roughly square — much closer to square than a multi-char
+                # placeholder (a 4-char string like "\ue000123" renders as a
+                # wide ~3.3:1 rectangle, not the font_size x font_size square
+                # we used to assume when pasting, which is what let emoji
+                # spill into neighboring words/outside mask shapes).
+                surrogate = chr(0xE000 + counter)
+                surrogate_to_token[surrogate] = token
+                display_freqs[surrogate] = count
+                counter += 1
+            else:
+                display_freqs[token] = count
 
         wc = WordCloud(**wc_kwargs)
-        wc.generate_from_frequencies(frequencies)
+        wc.generate_from_frequencies(display_freqs)
         wc.recolor(
             color_func=lambda word, font_size, position, orientation, random_state=None, **kwargs: (
-                "rgba(0,0,0,0)" if word.startswith("custom_")
+                "rgba(0,0,0,0)" if word in surrogate_to_token
                 else random_color_func(word, font_size, position, orientation)
             ),
             random_state=42,
         )
 
-        # split layout into words vs emojis
+        # split layout into words vs emojis (mapping surrogates back to the
+        # real token so the rest of the pipeline never sees placeholders)
         full_layout = wc.layout_
         word_entries, emoji_entries = [], []
         for entry in full_layout:
             raw = entry[0]
-            token = raw[0] if isinstance(raw, tuple) else raw
-            is_custom = token.startswith("custom_")
-            is_unicode = UNICODE_EMOJI_RE.fullmatch(token) is not None
-            if is_custom or is_unicode:
-                emoji_entries.append(entry)
+            surrogate = raw[0] if isinstance(raw, tuple) else raw
+            real_token = surrogate_to_token.get(surrogate)
+            if real_token is not None:
+                fixed_entry = (real_token,) + entry[1:]
+                emoji_entries.append(fixed_entry)
             else:
                 word_entries.append(entry)
 
-        # render words only
+        # render words only; the space reserved for emoji during layout
+        # stays blank here and gets filled in by the paste step below
         wc.layout_ = word_entries
         base_img = wc.to_image().convert("RGBA")
-                
+
+        try:
+            resample = Image.Resampling.LANCZOS
+        except AttributeError:
+            resample = Image.LANCZOS
+
+        # The exact pixel box WordCloud reserved for a surrogate at a given
+        # font_size comes from draw.textbbox(..., anchor="lt") — see
+        # WordCloud.generate_from_frequencies, which samples placement using
+        # exactly this box. Critically, the box's height is NOT font_size;
+        # a font's nominal point size includes internal leading the glyph's
+        # ink doesn't fill, so the real reserved height is only a fraction
+        # of font_size (around ~0.71x for this font). Treating box_h as
+        # font_size directly overstated the reserved box by ~40%, which is
+        # exactly what let a large, frequent emoji visually bleed past its
+        # actual slot into neighboring words. All PUA codepoints share the
+        # same fallback glyph, so the two ratios only need measuring once.
+        _img_grey = Image.new("L", (1, 1))
+        _draw = ImageDraw.Draw(_img_grey)
+        _ref_font = ImageFont.truetype(wc.font_path, 100)
+        _ref_box = _draw.textbbox((0, 0), chr(0xE000), font=_ref_font, anchor="lt")
+        w_ratio = (_ref_box[2] - _ref_box[0]) / 100
+        h_ratio = (_ref_box[3] - _ref_box[1]) / 100
+
+        # Emoji are rendered a bit smaller than the box reserved for them
+        # (which stays full-size for layout/spacing purposes) so they don't
+        # visually dominate text of the same frequency rank.
+        EMOJI_SCALE = 0.75
 
         # overlay emojis
         for entry in emoji_entries:
-            raw = entry[0]
-            token = raw[0] if isinstance(raw, tuple) else raw
-            # unpack
-            if len(entry) == 6:
-                _, _, font_size, position, orientation, _ = entry
-            else:
-                _, font_size, position, orientation, _ = entry
+            token, font_size, position, orientation, _color = entry
+
+            box_w = max(1, int(font_size * w_ratio))
+            box_h = max(1, int(font_size * h_ratio))
+            target_w = max(1, int(box_w * EMOJI_SCALE))
+            target_h = max(1, int(box_h * EMOJI_SCALE))
 
             # build URL + cache key
             if token.startswith("custom_"):
                 _, rest = token.split("custom_", 1)
                 _, eid = rest.split(":", 1)
-                url = f"https://cdn.discordapp.com/emojis/{eid}.png?size=64"
+                urls = [f"https://cdn.discordapp.com/emojis/{eid}.png?size=64"]
                 key = f"custom:{eid}"
             else:
-                cps = "-".join(f"{ord(c):x}" for c in token)
-                url = f"https://twemoji.maxcdn.com/v/latest/72x72/{cps}.png"
-                key = f"unicode:{cps}"
+                cps_full = "-".join(f"{ord(c):x}" for c in token)
+                # Twemoji's asset filenames inconsistently drop trailing
+                # variation-selector (fe0f) codepoints, so try the exact
+                # codepoint sequence first and fall back to the version
+                # with trailing fe0f parts stripped.
+                cps_stripped = "-".join(
+                    part for part in cps_full.split("-") if part != "fe0f"
+                )
+                urls = [
+                    f"https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72/{cps_full}.png"
+                ]
+                if cps_stripped != cps_full:
+                    urls.append(
+                        f"https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/72x72/{cps_stripped}.png"
+                    )
+                key = f"unicode:{cps_full}"
 
-            # fetch or reuse
-            if key in self._emoji_cache:
-                em = self._emoji_cache[key]
-                self._emoji_cache.move_to_end(key)
+            # fetch or reuse — cache key includes the target box size since
+            # the same emoji can be requested at very different sizes
+            cache_key = f"{key}@{target_w}x{target_h}in{box_w}x{box_h}"
+            if cache_key in self._emoji_cache:
+                em = self._emoji_cache[cache_key]
+                self._emoji_cache.move_to_end(cache_key)
             else:
-                try:
-                    async with self._session.get(url) as resp:
-                        data = await resp.read()
-                        em = Image.open(io.BytesIO(data)).convert("RGBA")
-                except Exception:
+                em = None
+                for url in urls:
+                    try:
+                        async with self._session.get(url) as resp:
+                            if resp.status != 200:
+                                continue
+                            data = await resp.read()
+                            em = Image.open(io.BytesIO(data)).convert("RGBA")
+                            break
+                    except Exception:
+                        continue
+                if em is None:
                     continue
-                # resize
-                try:
-                    resample = Image.Resampling.LANCZOS
-                except AttributeError:
-                    resample = Image.LANCZOS
-                em = em.resize((font_size, font_size), resample)
-                self._emoji_cache[key] = em
+                # Fit the (usually square) emoji image inside its shrunk
+                # target size without distorting it: scale to the largest
+                # size that fits both dimensions, then center it on a
+                # transparent canvas the size of the full reserved box (so
+                # it still lines up with the slot WordCloud allocated, just
+                # smaller within it). A plain stretch-to-box would visibly
+                # squash square emoji images into a non-square box anyway.
+                src_w, src_h = em.size
+                scale = min(target_w / src_w, target_h / src_h)
+                fit_w, fit_h = max(1, int(src_w * scale)), max(1, int(src_h * scale))
+                em_resized = em.resize((fit_w, fit_h), resample)
+                canvas = Image.new("RGBA", (box_w, box_h), (0, 0, 0, 0))
+                canvas.paste(
+                    em_resized,
+                    ((box_w - fit_w) // 2, (box_h - fit_h) // 2),
+                    em_resized,
+                )
+                em = canvas
+                self._emoji_cache[cache_key] = em
                 if len(self._emoji_cache) > self._cache_max:
                     self._emoji_cache.popitem(last=False)
 
-            # paste
-            x, y = position
-            base_img.paste(em, (int(x), int(y)), em)
+            # paste — `position` from WordCloud's layout_ is (row, col) i.e.
+            # (top, left), but PIL's Image.paste() box argument is (left,
+            # top). Pasting at (row, col) directly — as if it were already
+            # (left, top) — silently transposes every placement, which is
+            # why emoji used to land on top of text or outside mask shapes
+            # instead of in the gap actually reserved for them.
+            row, col = position
+            left, top = col, row
+            base_img.paste(em, (int(left), int(top)), em)
 
-            
-        base_img.save(buf, format="PNG")            
+        base_img.save(buf, format="PNG")
         buf.seek(0)
         return buf
 
@@ -464,7 +669,7 @@ class WordCloudCog(commands.Cog):
         """Wordcloud management."""
         await ctx.send_help()
 
-    @wordcloud.command(name="shape", hidden=True)
+    @wordcloud.command(name="shape")
     @checks.admin()
     async def shape(self, ctx: commands.Context, shape: str = None):
         """View or set the wordcloud shape. Available: none, circle, square, triangle, star, heart."""
@@ -576,9 +781,9 @@ class WordCloudCog(commands.Cog):
         await self.init_db()
         async with aiosqlite.connect(self.db_path) as db:
             cur = await db.execute(
-                "SELECT token, SUM(count) FROM counts "
-                "WHERE guild_id = ? GROUP BY token ORDER BY SUM(count) DESC LIMIT ?",
-                (ctx.guild.id, limit * 2),
+                "SELECT token, SUM(count) as c FROM counts "
+                "WHERE guild_id = ? GROUP BY token ORDER BY c DESC",
+                (ctx.guild.id,),
             )
             rows = await cur.fetchall()
         if not rows:
@@ -590,16 +795,19 @@ class WordCloudCog(commands.Cog):
                 return f"<:{name}:{eid}>"
             return tok
 
-        emojis = [(disp(tok), cnt) for tok, cnt in rows if tok.startswith("custom_")]
-        words  = [(tok, cnt) for tok, cnt in rows if not tok.startswith("custom_")]
+        # Rank words and emoji independently so a guild with far more word
+        # volume than emoji volume doesn't starve the emoji list out of a
+        # single combined top-N before the split happens.
+        emojis = [(disp(tok), cnt) for tok, cnt in rows if is_emoji_token(tok)][:limit]
+        words  = [(tok, cnt) for tok, cnt in rows if not is_emoji_token(tok)][:limit]
 
         e_emb = discord.Embed(
             title="📊 Top Emojis",
-            description="\n".join(f"{t}: {c}" for t, c in emojis[:limit]) or "None",
+            description="\n".join(f"{t}: {c}" for t, c in emojis) or "None",
         )
         w_emb = discord.Embed(
             title="📊 Top Words",
-            description="\n".join(f"{t}: {c}" for t, c in words[:limit]) or "None",
+            description="\n".join(f"{t}: {c}" for t, c in words) or "None",
         )
         pages = [e_emb, w_emb]
         msg = await ctx.send(embed=pages[0])
@@ -629,7 +837,6 @@ class WordCloudCog(commands.Cog):
         await self.init_db()
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("DELETE FROM counts WHERE guild_id = ?", (ctx.guild.id,))
-            await db.execute("DELETE FROM config WHERE guild_id = ?", (ctx.guild.id,))
             await db.commit()
         await ctx.send("Word counts reset for this guild.")
 
