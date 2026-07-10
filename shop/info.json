@@ -1,9 +1,9 @@
 {
   "name": "Shop",
   "author": ["Elvin"],
-  "version": "1.0.0",
-  "description": "An easy to use shop cog with buttons, modals, Red’s bank integration, inventory management, and role purchases.",
+  "version": "2.0.0",
+  "description": "An easy to use shop cog with buttons, modals, Red’s bank integration, inventory management, role purchases and dashboard support.",
   "install_msg": "Thanks for installing the Shop cog! use (p)shop to see all commands, If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)! ",  
   "requirements": [],
-  "tags": ["economy", "shop", "inventory", "roles"]
+  "tags": ["economy", "shop", "dashboard", "inventory", "roles"]
 }

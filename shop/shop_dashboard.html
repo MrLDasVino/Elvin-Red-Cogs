@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="icon" type="image/png" href="{{ variables["meta"]["icon"] }}">
+    <title>{{ variables["meta"]["title"] }} - Shop{% if guild %} - {{ guild.name }}{% endif %}</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            background: #1e1f22;
+            color: #dbdee1;
+            font-family: "gg sans", "Noto Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+        }
+        .shop-wrap {
+            --shop-bg: #2b2d31;
+            --shop-bg-alt: #313338;
+            --shop-border: #40444b;
+            --shop-text: #dbdee1;
+            --shop-muted: #949ba4;
+            --shop-accent: #5865f2;
+            --shop-accent-hover: #4752c4;
+            --shop-danger: #da373c;
+            --shop-danger-hover: #a12828;
+            --shop-success: #23a55a;
+            font-family: inherit;
+            color: var(--shop-text);
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 32px 20px 64px;
+        }
+        .shop-topbar {
+            margin-bottom: 18px;
+        }
+        .shop-back-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--shop-text);
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 600;
+            background: var(--shop-bg-alt);
+            border: 1px solid var(--shop-border);
+            border-radius: 999px;
+            padding: 6px 14px 6px 10px;
+        }
+        .shop-back-btn:hover {
+            border-color: var(--shop-accent);
+            color: #fff;
+        }
+        .shop-wrap h2 {
+            margin-top: 0;
+        }
+        .shop-card {
+            background: var(--shop-bg);
+            border: 1px solid var(--shop-border);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        .shop-card h3 {
+            margin-top: 0;
+            margin-bottom: 16px;
+        }
+        .shop-shop-block {
+            border: 1px solid var(--shop-border);
+            border-radius: 6px;
+            padding: 14px 16px;
+            margin-bottom: 16px;
+        }
+        .shop-shop-block:last-child {
+            margin-bottom: 0;
+        }
+        .shop-shop-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .shop-shop-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .shop-thumb {
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            object-fit: cover;
+            flex-shrink: 0;
+        }
+        .shop-shop-desc {
+            color: var(--shop-muted);
+            font-size: 0.88em;
+            margin: 8px 0;
+            white-space: pre-wrap;
+        }
+        .shop-table-wrap {
+            max-height: 230px;
+            overflow-y: auto;
+            border: 1px solid var(--shop-border);
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+        .shop-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.92em;
+        }
+        .shop-table th,
+        .shop-table td {
+            text-align: left;
+            padding: 10px 8px;
+            border-bottom: 1px solid var(--shop-border);
+            vertical-align: middle;
+        }
+        .shop-table th {
+            position: sticky;
+            top: 0;
+            background: var(--shop-bg-alt);
+            color: var(--shop-muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75em;
+            letter-spacing: 0.02em;
+            z-index: 1;
+        }
+        .shop-table tbody tr:last-child td {
+            border-bottom: none;
+        }
+        .shop-url-cell {
+            max-width: 220px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            display: inline-block;
+            color: var(--shop-muted);
+        }
+        .shop-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.75em;
+            font-weight: 600;
+        }
+        .shop-badge-on {
+            background: rgba(35, 165, 90, 0.15);
+            color: var(--shop-success);
+        }
+        .shop-badge-off {
+            background: rgba(148, 155, 164, 0.15);
+            color: var(--shop-muted);
+        }
+        .shop-badge-error {
+            background: rgba(218, 55, 60, 0.15);
+            color: var(--shop-danger);
+            margin-left: 6px;
+        }
+        .shop-empty {
+            color: var(--shop-muted);
+            padding: 12px 0;
+        }
+        .shop-help {
+            color: var(--shop-muted);
+            font-size: 0.85em;
+            margin-bottom: 16px;
+        }
+        .shop-btn {
+            display: inline-block;
+            border: none;
+            border-radius: 4px;
+            padding: 6px 12px;
+            font-size: 0.85em;
+            font-weight: 600;
+            cursor: pointer;
+            color: #fff;
+            background: var(--shop-accent);
+        }
+        .shop-btn:hover {
+            background: var(--shop-accent-hover);
+        }
+        .shop-btn-secondary {
+            background: var(--shop-bg-alt);
+            border: 1px solid var(--shop-border);
+            color: var(--shop-text);
+            margin-left: 8px;
+        }
+        .shop-btn-sm {
+            padding: 4px 9px;
+            font-size: 0.78em;
+            margin-right: 4px;
+        }
+        .shop-btn-danger {
+            background: var(--shop-danger);
+        }
+        .shop-btn-danger:hover {
+            background: var(--shop-danger-hover);
+        }
+        .shop-form-row {
+            margin-bottom: 14px;
+        }
+        .shop-form-row label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.85em;
+            color: var(--shop-muted);
+            font-weight: 600;
+        }
+        .shop-input,
+        .shop-wrap select,
+        .shop-wrap textarea {
+            width: 100%;
+            max-width: 420px;
+            background: var(--shop-bg-alt);
+            border: 1px solid var(--shop-border);
+            color: var(--shop-text);
+            border-radius: 4px;
+            padding: 8px 10px;
+            font-size: 0.9em;
+            box-sizing: border-box;
+            font-family: inherit;
+        }
+        .shop-checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .shop-checkbox-row label {
+            margin-bottom: 0;
+        }
+        .shop-error {
+            display: block;
+            color: var(--shop-danger);
+            font-size: 0.8em;
+            margin-top: 4px;
+        }
+        .shop-role-select-wrap {
+            position: relative;
+            max-width: 420px;
+        }
+        .shop-role-select-wrap .shop-role-select {
+            padding-left: 30px;
+        }
+        .shop-role-color-dot {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 1px solid rgba(255,255,255,0.25);
+            visibility: hidden;
+            pointer-events: none;
+        }
+        #shop-edit-shop-card,
+        #shop-add-item-card,
+        #shop-edit-item-card {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="shop-wrap">
+        <div class="shop-topbar">
+            <a class="shop-back-btn" href="{{ url_for('base_blueprint.index') }}">&larr; Back to dashboard</a>
+        </div>
+
+        <h2>Shop &mdash; {{ guild.name }}</h2>
+
+        {% if setup_error %}
+        <div class="shop-card">
+            <p class="shop-error">{{ setup_error }}</p>
+        </div>
+        {% endif %}
+
+    <div class="shop-card">
+        <h3>Current shops ({{ shops_rows|length }})</h3>
+        {% if shops_rows %}
+        {% for shop in shops_rows %}
+        <div class="shop-shop-block">
+            <div class="shop-shop-header">
+                <div class="shop-shop-title">
+                    {% if shop.thumbnail %}
+                    <img src="{{ shop.thumbnail }}" alt="" class="shop-thumb" onerror="this.style.display='none';">
+                    {% endif %}
+                    <div>
+                        <strong>{{ shop.name }}</strong>
+                        <span class="shop-badge {{ 'shop-badge-on' if shop.giftable else 'shop-badge-off' }}">
+                            {{ "Giftable" if shop.giftable else "Not giftable" }}
+                        </span>
+                    </div>
+                </div>
+                <div>
+                    <button type="button" class="shop-btn shop-btn-sm"
+                        data-name="{{ shop.name }}" data-description="{{ shop.description }}"
+                        data-thumbnail="{{ shop.thumbnail }}" data-giftable="{{ '1' if shop.giftable else '0' }}"
+                        onclick="shopEditShop(this)">
+                        Edit
+                    </button>
+                    <button type="button" class="shop-btn shop-btn-sm shop-btn-danger"
+                        onclick="shopManageAction('{{ shop.name }}', '', 'delete_shop')">
+                        Delete
+                    </button>
+                </div>
+            </div>
+            {% if shop.description %}
+            <p class="shop-shop-desc">{{ shop.description }}</p>
+            {% endif %}
+            {% if shop.stock_items %}
+            <div class="shop-table-wrap">
+                <table class="shop-table">
+                    <thead>
+                        <tr>
+                            <th>Item</th>
+                            <th>Price</th>
+                            <th>Stock</th>
+                            <th>Description</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in shop.stock_items %}
+                        <tr>
+                            <td>
+                                {{ item.label }}
+                                {% if item.role_missing %}<span class="shop-badge shop-badge-error">role deleted</span>{% endif %}
+                            </td>
+                            <td>{{ item.price }}</td>
+                            <td>{{ item.stock_label }}</td>
+                            <td><span class="shop-url-cell" title="{{ item.description }}">{{ item.description }}</span></td>
+                            <td>
+                                <button type="button" class="shop-btn shop-btn-sm"
+                                    data-shop="{{ shop.name }}" data-key="{{ item.key }}" data-mode="{{ item.mode }}"
+                                    data-item-name="{{ item.item_name }}" data-role-id="{{ item.role_id }}"
+                                    data-price="{{ item.price }}"
+                                    data-amount="{{ item.amount if item.amount is not none else '' }}"
+                                    data-description="{{ item.description }}"
+                                    onclick="shopEditItem(this)">
+                                    Edit
+                                </button>
+                                <button type="button" class="shop-btn shop-btn-sm shop-btn-danger"
+                                    onclick="shopManageAction('{{ shop.name }}', '{{ item.key }}', 'delete_item')">
+                                    Delete
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="shop-empty">No items in this shop yet.</p>
+            {% endif %}
+            <button type="button" class="shop-btn shop-btn-secondary shop-btn-sm" onclick="shopOpenAddItem('{{ shop.name }}')">
+                + Add item / role
+            </button>
+        </div>
+        {% endfor %}
+        {% else %}
+        <p class="shop-empty">No shops yet. Use the form below to create your first one.</p>
+        {% endif %}
+    </div>
+
+    <div class="shop-card" id="shop-edit-shop-card">
+        <h3>Edit shop</h3>
+        {{ edit_shop_form_html|safe }}
+    </div>
+
+    <div class="shop-card">
+        <h3>Add a shop</h3>
+        {{ add_shop_form_html|safe }}
+    </div>
+
+    <div class="shop-card" id="shop-add-item-card">
+        <h3>Add item / role</h3>
+        {{ add_item_form_html|safe }}
+    </div>
+
+    <div class="shop-card" id="shop-edit-item-card">
+        <h3>Edit item</h3>
+        {{ edit_item_form_html|safe }}
+    </div>
+
+    <div class="shop-card">
+        <h3>Purchase &amp; gift log channel</h3>
+        <p class="shop-help">Currently: {{ log_channel_name }}</p>
+        {{ settings_form_html|safe }}
+    </div>
+
+    {{ manage_form_html|safe }}
+
+    <script>
+        function shopManageAction(shopName, itemKey, action) {
+            if ((action === "delete_shop" || action === "delete_item") &&
+                !confirm("Delete this " + (action === "delete_shop" ? "shop" : "item") + "? This cannot be undone.")) {
+                return;
+            }
+            document.getElementById("shop_manage_shop_name").value = shopName;
+            document.getElementById("shop_manage_item_key").value = itemKey;
+            document.getElementById("shop_manage_action").value = action;
+            document.getElementById("shop_manage_submit").click();
+        }
+
+        function shopEditShop(btn) {
+            document.getElementById("shop_edit_shop_original_name").value = btn.dataset.name;
+            document.getElementById("shop_edit_shop_name").value = btn.dataset.name;
+            document.getElementById("shop_edit_shop_description").value = btn.dataset.description;
+            document.getElementById("shop_edit_shop_thumbnail").value = btn.dataset.thumbnail;
+            document.getElementById("shop_edit_shop_giftable").checked = btn.dataset.giftable === "1";
+            var card = document.getElementById("shop-edit-shop-card");
+            card.style.display = "block";
+            card.scrollIntoView({ behavior: "smooth" });
+        }
+
+        function shopCloseEditShop() {
+            document.getElementById("shop-edit-shop-card").style.display = "none";
+        }
+
+        function shopOpenAddItem(shopName) {
+            document.getElementById("shop_add_item_shop_name").value = shopName;
+            document.getElementById("shop_add_item_mode").value = "role";
+            document.getElementById("shop_add_item_item_name").value = "";
+            document.getElementById("shop_add_item_price").value = "";
+            document.getElementById("shop_add_item_amount").value = "";
+            document.getElementById("shop_add_item_description").value = "";
+            document.getElementById("shop_add_item_role").value = "";
+            shopUpdateRoleDot(document.getElementById("shop_add_item_role"));
+            shopToggleItemMode("add");
+            document.getElementById("shop-edit-item-card").style.display = "none";
+            var card = document.getElementById("shop-add-item-card");
+            card.style.display = "block";
+            card.scrollIntoView({ behavior: "smooth" });
+        }
+
+        function shopCloseAddItem() {
+            document.getElementById("shop-add-item-card").style.display = "none";
+        }
+
+        function shopEditItem(btn) {
+            document.getElementById("shop_edit_item_shop_name").value = btn.dataset.shop;
+            document.getElementById("shop_edit_item_original_key").value = btn.dataset.key;
+            document.getElementById("shop_edit_item_mode").value = btn.dataset.mode;
+            document.getElementById("shop_edit_item_item_name").value = btn.dataset.itemName;
+            document.getElementById("shop_edit_item_price").value = btn.dataset.price;
+            document.getElementById("shop_edit_item_amount").value = btn.dataset.amount;
+            document.getElementById("shop_edit_item_description").value = btn.dataset.description;
+            var roleId = btn.dataset.roleId;
+            if (!roleId || roleId === "0") {
+                roleId = "";
+            }
+            document.getElementById("shop_edit_item_role").value = roleId;
+            shopUpdateRoleDot(document.getElementById("shop_edit_item_role"));
+            shopToggleItemMode("edit");
+            document.getElementById("shop-add-item-card").style.display = "none";
+            var card = document.getElementById("shop-edit-item-card");
+            card.style.display = "block";
+            card.scrollIntoView({ behavior: "smooth" });
+        }
+
+        function shopCloseEditItem() {
+            document.getElementById("shop-edit-item-card").style.display = "none";
+        }
+
+        function shopToggleItemMode(which) {
+            var mode = document.getElementById("shop_" + which + "_item_mode").value;
+            var isRole = mode === "role";
+            document.getElementById("shop_" + which + "_item_item_name_row").style.display = isRole ? "none" : "block";
+            document.getElementById("shop_" + which + "_item_role_row").style.display = isRole ? "block" : "none";
+        }
+
+        function shopUpdateRoleDot(select) {
+            var dot = document.getElementById(select.id + "_dot");
+            if (!dot) {
+                return;
+            }
+            var opt = select.options[select.selectedIndex];
+            var color = opt ? opt.getAttribute("data-color") : null;
+            dot.style.background = color || "transparent";
+            dot.style.visibility = select.value ? "visible" : "hidden";
+        }
+
+        shopToggleItemMode("add");
+        shopToggleItemMode("edit");
+        shopUpdateRoleDot(document.getElementById("shop_add_item_role"));
+        shopUpdateRoleDot(document.getElementById("shop_edit_item_role"));
+    </script>
+    </div>
+</body>
+</html>
