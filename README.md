@@ -9,7 +9,7 @@
 | CharacterGen   | 1.0.0            | <details><summary>Character Generator</summary>Generate quirky characters with backstories for roleplay or GM use.</details> 
 | MealDB         | 1.0.0            | <details><summary>Meal Recipe Database</summary>Fetch recipes via TheMealDB API.</details> 
 | UrbanDictionary| 1.0.0            | <details><summary>Urban Dictionary Search</summary>Fetch definitions, examples, and user ratings via the Urban Dictionary API.</details> 
-| Shop           | 1.4.1            | <details><summary>Shop Commands</summary>Create/edit shops to be able to buy or gift roles items etc.</details> 
+| Shop           | 2.0.0            | <details><summary>Shop Commands</summary>Create/edit shops to be able to buy or gift roles items etc as well as dashboard support.</details> 
 | Lottery        | 1.0.0            | <details><summary>Lottery</summary>A bank-backed lottery system with buy, inventory, manage, and draw commands, supports multiple lotteries and reward types, uses buttons and modals for easy use..</details>
 | Wallhaven      | 1.0.0            | <details><summary>Wallhaven Wallpapers</summary>Fetch wallpapers from Wallhaven (random, search, category) with buttons and a dropdown. Guild-level NSFW toggle and owner config.</details> 
 | Reacter        | 1.1.1            | <details><summary>Reacter</summary>Randomly reacts to messages with server emojis (includes animated emojis). Admin commands to enable/disable and set frequency and amount.</details>
