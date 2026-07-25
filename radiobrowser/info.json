@@ -1,0 +1,9 @@
+{
+  "name": "radiobrowser",
+  "version": "1.0.0",
+  "description": "Search and fetch internet radio stations using the Radio Browser API.",
+  "author": ["Elvin"],
+  "requirements": ["aiohttp"],
+  "tags": ["radio", "stream", "music", "search", "random"],
+  "install_msg": "Thanks for installing RadioBrowser! Use `[p]radio` to start searching or get a random station, If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)!"
+}
