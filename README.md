@@ -17,6 +17,8 @@
 | CardPacks      | 1.0.0            | <details><summary>Card Packs</summary>A simple to use collectible card pack minigame, create card packs and cards then pull cards from the packs using server currency, everything is customizable.</details> 
 | Tale           | 1.2.2            | <details><summary>Tale</summary>Choose your own adventure cog with import/export/manage features, create text based adventures to play.</details>  
 | BattleRoyale   | 1.0.5            | <details><summary>Battleroyale</summary>BattleRoyale cog that can be customized in many ways.</details>
+| RadioBrowser   | 1.0.0            | <details><summary>Radio Browser</summary>Search and fetch internet radio stations using the Radio Browser API.</details>
+| ChatterBox     | 1.0.0            | <details><summary>ChatterBox</summary>Learns from chat and randomly repeats saved messages, very customizable.</details>
 
 # Installation
 
