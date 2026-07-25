@@ -15,14 +15,14 @@ DEFAULT_DISCOVER_MSG = (
 )
 
 # Banner image URLs – replace these placeholders with your actual image links
-SEED_BANNER = "https://files.catbox.moe/i1787b.png"
-PLANT_BANNER = "https://files.catbox.moe/7btmdw.png"
-LIST_BANNER = "https://files.catbox.moe/43lzl6.png"
+SEED_BANNER = "https://files.catbox.moe/eayj32.png"
+PLANT_BANNER = "https://files.catbox.moe/wvf27j.png"
+LIST_BANNER = "https://files.catbox.moe/rn4git.png"
 REWARD_BANNERS = {
-    "currency": "https://files.catbox.moe/bn35ib.png",
-    "prompt":   "https://files.catbox.moe/6oqu0n.png",
-    "fortune":  "https://files.catbox.moe/z1gy0f.png",
-    "advice":   "https://files.catbox.moe/3nr7zo.png",
+    "currency": "https://files.catbox.moe/qc1h6u.png",
+    "prompt":   "https://files.catbox.moe/q04tqy.png",
+    "fortune":  "https://files.catbox.moe/4jbpxq.png",
+    "advice":   "https://files.catbox.moe/1gs6jr.png",
 }
 
 PROMPTS = [
