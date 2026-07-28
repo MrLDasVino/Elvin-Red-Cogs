@@ -1,0 +1,15 @@
+{
+    "author": ["Elvin"],
+    "description": "A full fishing RPG cog. Fish across different waters, buy boats and items, complete quests from local NPCs, collect every fish in the Fishpedia, and climb the angler leaderboard, all through a single interactive menu.",
+    "install_msg": "Thanks for installing FishRPG! Run `[p]fishrpg` to open the menu and start fishing. If you enjoy my cogs and wish to support me then please consider donating via [Ko-Fi](https://ko-fi.com/dasvino)!",
+    "short": "An interactive fishing RPG with areas, boats, quests and a fishpedia.",
+    "end_user_data_statement": "This cog stores each Discord user's fishing progress (currency, caught fish, inventory items, owned boats, active and completed quests, fishing area and cooldown timestamp) keyed by their Discord user ID. It also stores per-server settings such as the fishing cooldown and page images. No message content is stored. Data can be removed by an administrator using the resetuser admin command or by using the bot's standard data deletion tools.",
+    "name": "FishRPG",
+    "tags": [
+        "fishing",
+        "rpg",
+        "game",
+        "fish",
+        "fun"
+    ]
+}

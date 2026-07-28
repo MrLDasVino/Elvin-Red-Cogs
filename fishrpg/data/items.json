@@ -1,0 +1,7 @@
+[
+    {"id": "basic_bait", "name": "Basic Bait", "description": "A simple bait bundle. Doesn't do much, but every angler starts somewhere.", "image": "", "price": 20, "effect": null, "effect_value": 0},
+    {"id": "energy_drink", "name": "Energy Drink", "description": "Keeps you alert and ready to cast again sooner. Reduces your fishing cooldown while equipped.", "image": "", "price": 150, "effect": "cooldown_reduction", "effect_value": 20},
+    {"id": "lucky_charm", "name": "Lucky Charm", "description": "A small charm that seems to attract better luck out on the water. Improves your odds of a rare catch.", "image": "", "price": 300, "effect": "luck_boost", "effect_value": 0.15},
+    {"id": "golden_hook", "name": "Golden Hook", "description": "A gleaming golden hook favored by legendary anglers. Significantly improves your luck.", "image": "", "price": 800, "effect": "luck_boost", "effect_value": 0.35},
+    {"id": "research_permit", "name": "Research Permit", "description": "An official permit. Doesn't do anything mechanically, but it looks great in your inventory.", "image": "", "price": 50, "effect": null, "effect_value": 0}
+]

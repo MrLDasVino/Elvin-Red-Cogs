@@ -1,0 +1,9 @@
+[
+    {"id": "junk", "name": "Junk", "weight": 130, "color": 8421504, "emoji": "🗑️"},
+    {"id": "common", "name": "Common", "weight": 100, "color": 7844437, "emoji": "🐟"},
+    {"id": "uncommon", "name": "Uncommon", "weight": 55, "color": 3066993, "emoji": "🐠"},
+    {"id": "rare", "name": "Rare", "weight": 25, "color": 3447003, "emoji": "✨"},
+    {"id": "epic", "name": "Epic", "weight": 10, "color": 10181046, "emoji": "🔥"},
+    {"id": "legendary", "name": "Legendary", "weight": 3, "color": 15844367, "emoji": "🌟"},
+    {"id": "mythical", "name": "Mythical", "weight": 1, "color": 15158332, "emoji": "💎"}
+]

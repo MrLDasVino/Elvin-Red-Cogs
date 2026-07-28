@@ -1,0 +1,13 @@
+[
+    {"id": "harbor", "name": "Sunny Harbor", "description": "A calm and welcoming harbor, perfect for beginners to learn the ropes.", "image": "", "required_boat": null, "order": 0},
+    {"id": "swamp", "name": "Murky Swamp", "description": "A boggy, overgrown swamp just past the harbor, full of strange little critters.", "image": "", "required_boat": "kayak", "order": 1},
+    {"id": "lake", "name": "Misty Lake", "description": "A quiet lake shrouded in fog, home to a variety of freshwater fish.", "image": "", "required_boat": "rowboat", "order": 2},
+    {"id": "river", "name": "Rushing River", "description": "A fast flowing river cutting through the hills, tricky to fish but rewarding.", "image": "", "required_boat": "canoe", "order": 3},
+    {"id": "coast", "name": "Sandy Coast", "description": "Sun soaked shores where the sea meets the sand.", "image": "", "required_boat": "sailboat", "order": 4},
+    {"id": "frozen_lake", "name": "Frozen Tundra Lake", "description": "A frigid lake locked in ice for most of the year, home to hardy cold water fish.", "image": "", "required_boat": "icebreaker", "order": 5},
+    {"id": "ocean", "name": "Open Ocean", "description": "Vast open waters, home to bigger and bolder fish.", "image": "", "required_boat": "speedboat", "order": 6},
+    {"id": "volcanic_vents", "name": "Volcanic Vents", "description": "Scalding waters bubbling above a chain of undersea volcanic vents.", "image": "", "required_boat": "diving_bell", "order": 7},
+    {"id": "deep_sea", "name": "Deep Sea", "description": "Dark, cold waters far from shore where strange creatures lurk.", "image": "", "required_boat": "yacht", "order": 8},
+    {"id": "abyss", "name": "The Abyss", "description": "The deepest, darkest waters known to anglers. Only the bravest dare fish here.", "image": "", "required_boat": "submarine", "order": 9},
+    {"id": "sky_lake", "name": "Floating Sky Lake", "description": "A legendary lake said to float among the clouds, reachable only by air.", "image": "", "required_boat": "airship", "order": 10}
+]

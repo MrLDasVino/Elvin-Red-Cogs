@@ -1,0 +1,12 @@
+[
+    {"id": "kayak", "name": "Kayak", "description": "A tiny, nimble kayak perfect for pushing through swamp reeds.", "image": "", "price": 60, "unlocks_area": "swamp"},
+    {"id": "rowboat", "name": "Rowboat", "description": "A simple wooden rowboat. Sturdy enough to reach the nearby lake.", "image": "", "price": 100, "unlocks_area": "lake"},
+    {"id": "canoe", "name": "Canoe", "description": "A light and nimble canoe built for navigating fast currents.", "image": "", "price": 150, "unlocks_area": "river"},
+    {"id": "sailboat", "name": "Sailboat", "description": "A proper sailboat capable of reaching the coastline.", "image": "", "price": 400, "unlocks_area": "coast"},
+    {"id": "icebreaker", "name": "Icebreaker", "description": "A reinforced hull built to push through the frozen tundra lake's icy surface.", "image": "", "price": 600, "unlocks_area": "frozen_lake"},
+    {"id": "speedboat", "name": "Speedboat", "description": "A fast motorboat that can handle the open water.", "image": "", "price": 900, "unlocks_area": "ocean"},
+    {"id": "diving_bell", "name": "Diving Bell", "description": "A reinforced diving bell capable of withstanding the heat of the volcanic vents.", "image": "", "price": 1500, "unlocks_area": "volcanic_vents"},
+    {"id": "yacht", "name": "Yacht", "description": "A luxurious yacht equipped for long voyages into deep water.", "image": "", "price": 2000, "unlocks_area": "deep_sea"},
+    {"id": "submarine", "name": "Submarine", "description": "A reinforced submarine, the only vessel capable of reaching the abyss.", "image": "", "price": 5000, "unlocks_area": "abyss"},
+    {"id": "airship", "name": "Airship", "description": "A magnificent airship, the only way to reach the legendary floating sky lake.", "image": "", "price": 8000, "unlocks_area": "sky_lake"}
+]

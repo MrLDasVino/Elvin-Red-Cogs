@@ -19,6 +19,8 @@
 | BattleRoyale   | 1.0.5            | <details><summary>Battleroyale</summary>BattleRoyale cog that can be customized in many ways.</details>
 | RadioBrowser   | 1.0.0            | <details><summary>Radio Browser</summary>Search and fetch internet radio stations using the Radio Browser API.</details>
 | ChatterBox     | 1.0.0            | <details><summary>ChatterBox</summary>Learns from chat and randomly repeats saved messages, very customizable.</details>
+| FishRPG        | 1.0.0            | <details><summary>Fish RPG</summary>An interactive fishing RPG with areas, boats, quests and a fishpedia.</details>
+| MemeForge      | 1.0.0            | <details><summary>Meme Forge</summary>Create memes from countless templates using an interactive browser and modals.</details>
 
 # Installation
 
