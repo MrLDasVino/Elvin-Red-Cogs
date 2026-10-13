@@ -1,13 +1,192 @@
 import io
 import logging
 import random
+import re
+from urllib.parse import urlparse
 from typing import Optional, Union
 
-from redbot.core import commands, Config
+from redbot.core import commands, Config, app_commands
 import aiohttp
 import discord
 
 logger = logging.getLogger("red.cogs.imagefilter")
+
+IMAGE_EFFECTS = ('blur', 'balls', 'abstract', '3d', 'ace', 'ads', 'bayer', 'bevel', 'billboard', 'blocks', 'boil', 'bomb', 'bonks', 'bubble', 'burn', 'canny', 'cartoon', 'cinema', 'clock', 'cloth', 'console', 'contour', 'cow', 'cracks', 'cube', 'dilate', 'dither', 'dizzy', 'dots', 'earthquake', 'emojify', 'endless', 'equations', 'explicit', 'fall', 'fan', 'fire', 'flag', 'flush', 'gallery', 'gameboy_camera', 'glitch', 'globe', 'half_invert', 'heart_diffraction', 'heart_locket', 'hearts', 'infinity', 'ipcam', 'kanye', 'knit', 'lamp', 'laundry', 'layers', 'letters', 'lines', 'liquefy', 'logoff', 'lsd', 'magnify', 'matrix', 'melt', 'minecraft', 'neon', 'optics', 'painting', 'paparazzi', 'patpat', 'pattern', 'phase', 'phone', 'pizza', 'plank', 'plates', 'poly', 'print', 'pyramid', 'quarter', 'radiate', 'rain', 'reflection', 'ripped', 'ripple', 'roll', 'scrapbook', 'sensitive', 'shear', 'shine', 'shock', 'shoot', 'shred', 'slice', 'soap', 'spikes', 'spin', 'stereo', 'stretch', 'tiles', 'tunnel', 'tv', 'wall', 'warp', 'wave', 'wiggle', 'zonk')
+IMAGE_EFFECT_SET = frozenset(IMAGE_EFFECTS)
+
+
+def _normalise_effect_name(value):
+    return re.sub(r"[\s-]+", "_", (value or "").strip().casefold())
+
+
+def _effect_label(value):
+    if value == "3d":
+        return "3D"
+    return value.replace("_", " ").title()
+
+
+async def _effect_autocomplete(interaction: discord.Interaction, current: str):
+    query = (current or "").strip().casefold().replace("_", " ").replace("-", " ")
+    names = list(IMAGE_EFFECTS)
+    if query:
+        def rank(name):
+            label = _effect_label(name).casefold()
+            normalised = name.replace("_", " ").casefold()
+            if label.startswith(query) or normalised.startswith(query):
+                return (0, name)
+            if query in label or query in normalised:
+                return (1, name)
+            return (2, name)
+        names = [name for name in names if query in _effect_label(name).casefold() or query in name.replace("_", " ").casefold()]
+        names.sort(key=rank)
+    else:
+        names.sort(key=lambda name: _effect_label(name).casefold())
+    return [app_commands.Choice(name=_effect_label(name), value=name) for name in names[:25]]
+
+
+def _make_modal_field(label, **kwargs):
+    if hasattr(discord.ui, "Label"):
+        field = discord.ui.TextInput(**kwargs)
+        return field, discord.ui.Label(text=label, component=field)
+    field = discord.ui.TextInput(label=label, **kwargs)
+    return field, field
+
+
+class ImageFilterModal(discord.ui.Modal):
+    def __init__(self, cog, owner_id: int, effect: str, default_target: str = ""):
+        titles = {
+            "ace": "Ace Dialogue",
+            "scrapbook": "Scrapbook Text",
+            "heart_locket": "Heart Locket Targets",
+        }
+        super().__init__(title=titles[effect])
+        self.cog = cog
+        self.owner_id = owner_id
+        self.effect = effect
+        self.target_input = None
+        self.second_target_input = None
+
+        if effect == "ace":
+            self.target_input, target_item = _make_modal_field(
+                "Text in the speech bubble",
+                custom_id="imgmanip_ace_text",
+                placeholder="Enter the dialogue for the Ace GIF",
+                min_length=1,
+                max_length=500,
+                required=True,
+            )
+            self.add_item(target_item)
+        elif effect == "scrapbook":
+            self.target_input, target_item = _make_modal_field(
+                "Scrapbook text",
+                custom_id="imgmanip_scrapbook_text",
+                placeholder="Enter the text for the scrapbook image",
+                min_length=1,
+                max_length=1000,
+                required=True,
+            )
+            self.add_item(target_item)
+        elif effect == "heart_locket":
+            self.target_input, target_item = _make_modal_field(
+                "First target (user ID or image URL)",
+                custom_id="imgmanip_locket_target_1",
+                default=default_target or None,
+                placeholder="User mention, user ID, or image URL",
+                max_length=500,
+                required=True,
+            )
+            self.second_target_input, second_target_item = _make_modal_field(
+                "Second target (user ID or image URL)",
+                custom_id="imgmanip_locket_target_2",
+                placeholder="Another user mention, user ID, or image URL",
+                max_length=500,
+                required=True,
+            )
+            self.add_item(target_item)
+            self.add_item(second_target_item)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("This form belongs to another user.", ephemeral=True)
+            return
+        target = self.target_input.value if self.target_input is not None else ""
+        second_target = self.second_target_input.value if self.second_target_input is not None else ""
+        await self.cog._run_slash_effect(interaction, self.effect, target, second_target)
+
+
+class ImageEffectSelect(discord.ui.Select):
+    def __init__(self, parent_view):
+        self.parent_view = parent_view
+        start = parent_view.page * 25
+        end = start + 25
+        options = [
+            discord.SelectOption(label=_effect_label(effect), value=effect)
+            for effect in parent_view.effects[start:end]
+        ]
+        super().__init__(
+            placeholder="Choose an effect for this message...",
+            min_values=1,
+            max_values=1,
+            options=options,
+            custom_id="imgmanip_message_effect_select",
+        )
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.parent_view.owner_id:
+            await interaction.response.send_message("This menu belongs to another user.", ephemeral=True)
+            return
+        await self.parent_view.choose_effect(interaction, self.values[0])
+
+
+class ImageEffectPageButton(discord.ui.Button):
+    def __init__(self, parent_view, delta: int):
+        self.parent_view = parent_view
+        self.delta = delta
+        label = "Previous" if delta < 0 else "Next"
+        page_count = (len(parent_view.effects) + 24) // 25
+        disabled = (parent_view.page == 0 if delta < 0 else parent_view.page >= page_count - 1)
+        super().__init__(label=label, style=discord.ButtonStyle.secondary, disabled=disabled)
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.parent_view.owner_id:
+            await interaction.response.send_message("This menu belongs to another user.", ephemeral=True)
+            return
+        page_count = (len(self.parent_view.effects) + 24) // 25
+        self.parent_view.page = max(0, min(page_count - 1, self.parent_view.page + self.delta))
+        self.parent_view.rebuild()
+        await interaction.response.edit_message(view=self.parent_view)
+
+
+class ImageEffectSelectView(discord.ui.View):
+    def __init__(self, cog, owner_id: int, target_url: str):
+        super().__init__(timeout=180)
+        self.cog = cog
+        self.owner_id = owner_id
+        self.target_url = target_url
+        self.effects = sorted(IMAGE_EFFECTS, key=lambda effect: _effect_label(effect).casefold())
+        self.page = 0
+        self.rebuild()
+
+    def rebuild(self):
+        self.clear_items()
+        self.add_item(ImageEffectSelect(self))
+        self.add_item(ImageEffectPageButton(self, -1))
+        self.add_item(ImageEffectPageButton(self, 1))
+
+    async def choose_effect(self, interaction: discord.Interaction, effect: str):
+        self.stop()
+        if effect in ("ace", "scrapbook", "heart_locket"):
+            await interaction.response.send_modal(
+                ImageFilterModal(
+                    self.cog,
+                    self.owner_id,
+                    effect,
+                    default_target=self.target_url if effect == "heart_locket" else "",
+                )
+            )
+            return
+        await self.cog._run_slash_effect(interaction, effect, self.target_url)
+
 BaseCog = getattr(commands, "Cog", object)
 
 class ImageFilter(BaseCog):
@@ -17,6 +196,86 @@ class ImageFilter(BaseCog):
         self.bot = bot
         self.config = Config.get_conf(self, identifier=1234567890)
         self.config.register_user(api_key=None)
+        self.config.register_global(api_key=None)
+
+    def cog_unload(self):
+        tree = getattr(self.bot, "tree", None)
+        if tree is None:
+            return
+        try:
+            tree.remove_command("Image Effect", type=discord.AppCommandType.message)
+        except Exception:
+            logger.debug("Could not remove Image Effect context menu during unload", exc_info=True)
+
+    @app_commands.command(name="imgmanip", description="Search for an image effect and apply it to a user or image.")
+    @app_commands.allowed_installs(guilds=True, users=True)
+    @app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+    @app_commands.describe(
+        effect="Search for a filter or effect",
+        target_user="Optionally choose a Discord user",
+        target="Optional user mention, user ID, or image URL",
+    )
+    @app_commands.autocomplete(effect=_effect_autocomplete)
+    async def slash_imgmanip(
+        self,
+        interaction: discord.Interaction,
+        effect: str,
+        target_user: Optional[discord.User] = None,
+        target: Optional[str] = None,
+    ):
+        effect_name = _normalise_effect_name(effect)
+        if effect_name not in IMAGE_EFFECT_SET:
+            await interaction.response.send_message(
+                "Choose an effect from the autocomplete suggestions when typing the effect name.",
+                ephemeral=True,
+            )
+            return
+
+        api_key = await self._get_api_key()
+        if not api_key:
+            await interaction.response.send_message(
+                "The bot owner must set the shared Jeyy API key with `[p]imgmanip setkey YOUR_KEY` before anyone can use this command.",
+                ephemeral=True,
+            )
+            return
+
+        target_value = (target or "").strip()
+        if not target_value and target_user is not None:
+            target_value = str(target_user.id)
+
+        if effect_name in ("ace", "scrapbook", "heart_locket"):
+            await interaction.response.send_modal(
+                ImageFilterModal(
+                    self,
+                    interaction.user.id,
+                    effect_name,
+                    default_target=target_value if effect_name == "heart_locket" else "",
+                )
+            )
+            return
+
+        await self._run_slash_effect(interaction, effect_name, target_value)
+
+    slash_imgmanip.allowed_contexts = discord.app_commands.AppCommandContext(
+        guild=True, dm_channel=True, private_channel=True
+    )
+    slash_imgmanip.allowed_installs = discord.app_commands.AppInstallationType(
+        guild=True, user=True
+    )
+
+    async def _handle_message_image_effect(self, interaction: discord.Interaction, message: discord.Message):
+        target_url = self._message_image_url(message)
+        if not target_url:
+            try:
+                target_url = message.author.display_avatar.url
+            except Exception:
+                target_url = interaction.user.display_avatar.url
+        view = ImageEffectSelectView(self, interaction.user.id, target_url)
+        await interaction.response.send_message(
+            "Choose an effect for this message. Its image attachment will be used when available; otherwise the message author's avatar will be used.",
+            view=view,
+            ephemeral=True,
+        )
 
     @commands.group(name="imgmanip", invoke_without_command=True)
     async def imgmanip(self, ctx):
@@ -24,10 +283,37 @@ class ImageFilter(BaseCog):
         await ctx.send_help(ctx.command)
 
     @imgmanip.command(name="setkey")
+    @commands.is_owner()
     async def setkey(self, ctx, api_key: str):
-        """Store your Jeyy API key."""
-        await self.config.user(ctx.author).api_key.set(api_key)
-        await ctx.send("✅ Your Jeyy API key has been saved.")
+        """Set the shared Jeyy API key for this bot."""
+        await self.config.api_key.set(api_key)
+        await ctx.send("✅ The shared Jeyy API key has been saved. All users can now use the image commands.")
+
+    async def _get_api_key(self) -> Optional[str]:
+        api_key = await self.config.api_key()
+        if api_key:
+            return api_key
+
+        owner_ids = set()
+        owner_id = getattr(self.bot, "owner_id", None)
+        if owner_id:
+            owner_ids.add(int(owner_id))
+        configured_owner_ids = getattr(self.bot, "owner_ids", None)
+        if isinstance(configured_owner_ids, int):
+            owner_ids.add(configured_owner_ids)
+        elif configured_owner_ids:
+            owner_ids.update(int(value) for value in configured_owner_ids if value)
+
+        for owner_id in owner_ids:
+            try:
+                user_config = self.config.user_from_id(owner_id)
+            except AttributeError:
+                user_config = self.config.user(discord.Object(id=owner_id))
+            legacy_key = await user_config.api_key()
+            if legacy_key:
+                await self.config.api_key.set(legacy_key)
+                return legacy_key
+        return None
 
     async def _fetch(
         self,
@@ -56,67 +342,417 @@ class ImageFilter(BaseCog):
                         raise RuntimeError(f"HTTP {resp.status}")
                     return await resp.read()
 
-    async def _resolve_image_url(
-        self,
-        ctx: commands.Context,
-        target: Optional[Union[discord.Member, str]]
-    ) -> Optional[str]:
-        """
-        Resolve an image URL from:
-        - Member or User object -> avatar
-        - pasted numeric user id or mention -> avatar
-        - http(s) URL string -> the URL itself
-        - message attachments -> first attachment
-        - fallback -> ctx.author avatar
-        Returns None only if no avatar or attachment can be resolved.
-        """
-        # Direct Member/User
-        if isinstance(target, (discord.Member, discord.User)):
-            user = target
+
+    async def _resolve_slash_image(self, interaction: discord.Interaction, target: Optional[str], default_to_author: bool = True) -> Optional[str]:
+        value = (target or "").strip()
+        if not value:
+            if not default_to_author:
+                return None
             try:
-                return user.display_avatar.url
+                return interaction.user.display_avatar.url
             except Exception:
                 return None
 
-        # If target is a string, try URL, mention, or user id
+        parsed = urlparse(value)
+        if parsed.scheme.casefold() in ("http", "https") and parsed.netloc:
+            return value
+
+        mention = re.fullmatch(r"<@!?(\d+)>", value)
+        user_id = int(mention.group(1)) if mention else (int(value) if value.isdigit() else None)
+        if user_id is None:
+            return None
+
+        user = None
+        guild = interaction.guild
+        if guild is not None:
+            user = guild.get_member(user_id)
+        if user is None:
+            user = self.bot.get_user(user_id)
+        if user is None:
+            try:
+                user = await self.bot.fetch_user(user_id)
+            except (discord.HTTPException, discord.NotFound, discord.Forbidden):
+                user = None
+            except Exception:
+                user = None
+        if user is None:
+            return None
+        try:
+            return user.display_avatar.url
+        except Exception:
+            return None
+
+    @staticmethod
+    def _is_upload_too_large(error: discord.HTTPException) -> bool:
+        return (
+            getattr(error, "status", None) == 413
+            or getattr(error, "code", None) == 40005
+            or "payload too large" in str(error).casefold()
+        )
+
+    @staticmethod
+    def _upload_limit(interaction: discord.Interaction) -> int:
+        limit = getattr(interaction, "filesize_limit", None)
+        if isinstance(limit, int) and limit > 0:
+            return limit
+        guild = getattr(interaction, "guild", None)
+        guild_limit = getattr(guild, "filesize_limit", None) if guild else None
+        standard_limit = 20 * 1024 * 1024
+        if isinstance(guild_limit, int) and guild_limit > 0:
+            return max(standard_limit, guild_limit)
+        return standard_limit
+
+    @staticmethod
+    def _compress_gif(data: bytes, quality: int) -> Optional[bytes]:
+        try:
+            from PIL import Image, ImageSequence
+        except ImportError:
+            return None
+
+        settings = (
+            (0.88, 256, 1),
+            (0.76, 192, 1),
+            (0.64, 128, 1),
+            (0.54, 96, 2),
+            (0.45, 80, 2),
+            (0.37, 64, 3),
+            (0.30, 48, 4),
+            (0.23, 32, 5),
+        )
+        if quality < 0 or quality >= len(settings):
+            return None
+
+        try:
+            source = Image.open(io.BytesIO(data))
+            scale, colors, frame_step = settings[quality]
+            width, height = source.size
+            size = (max(1, int(width * scale)), max(1, int(height * scale)))
+            durations = []
+            frames = []
+            frame_total = getattr(source, "n_frames", 1)
+            source_durations = []
+            for frame in ImageSequence.Iterator(source):
+                source_durations.append(max(20, int(frame.info.get("duration", source.info.get("duration", 100)))))
+            if not source_durations:
+                source_durations = [100]
+            selected_indices = list(range(0, frame_total, frame_step))
+            for index in selected_indices:
+                source.seek(index)
+                frame = source.convert("RGB")
+                resampling = getattr(getattr(Image, "Resampling", Image), "LANCZOS", getattr(Image, "LANCZOS", 1))
+                quantize_modes = getattr(Image, "Quantize", Image)
+                quantize_method = getattr(quantize_modes, "MEDIANCUT", 0)
+                if frame.size != size:
+                    frame = frame.resize(size, resampling)
+                frame = frame.quantize(colors=colors, method=quantize_method)
+                frames.append(frame)
+                durations.append(sum(source_durations[index:min(index + frame_step, frame_total)]))
+            if not frames:
+                return None
+            output = io.BytesIO()
+            frames[0].save(
+                output,
+                format="GIF",
+                save_all=True,
+                append_images=frames[1:],
+                duration=durations,
+                loop=source.info.get("loop", 0),
+                optimize=True,
+                disposal=2,
+            )
+            return output.getvalue()
+        except Exception:
+            logger.exception("Could not compress generated GIF")
+            return None
+
+    async def _send_slash_result(self, interaction: discord.Interaction, effect_name: str, data: bytes) -> bool:
+        limit = self._upload_limit(interaction)
+        last_error = None
+        compressed_versions = 0
+
+        try:
+            await interaction.followup.send("\u200b", ephemeral=True)
+            try:
+                await interaction.delete_original_response()
+            except discord.HTTPException:
+                logger.debug("Could not delete the private processing response", exc_info=True)
+        except discord.HTTPException:
+            logger.exception("Could not prepare the interaction for public image delivery")
+            try:
+                await interaction.followup.send(
+                    "The effect finished, but Discord would not let me prepare the public image response. "
+                    "Check whether this server allows external apps to post publicly.",
+                    ephemeral=True,
+                )
+            except discord.HTTPException:
+                logger.exception("Could not report the public image delivery error")
+            return False
+
+        for attempt in range(9):
+            candidate = data if attempt == 0 else self._compress_gif(data, attempt - 1)
+            if candidate is None:
+                continue
+            if attempt > 0:
+                compressed_versions += 1
+            try:
+                await interaction.followup.send(
+                    file=discord.File(io.BytesIO(candidate), filename=f"{effect_name}.gif"),
+                    ephemeral=False,
+                    allowed_mentions=discord.AllowedMentions.none(),
+                )
+                return True
+            except discord.HTTPException as error:
+                last_error = error
+                if not self._is_upload_too_large(error):
+                    logger.exception("Discord rejected the generated image for effect %s", effect_name)
+                    if getattr(error, "status", None) == 403 or getattr(error, "code", None) == 50013:
+                        message = (
+                            "The image was generated, but Discord would not allow this app to post it publicly. "
+                            "Check the server's **Use External Apps** permission and your permission to send messages in this channel."
+                        )
+                    else:
+                        message = (
+                            f"The image was generated, but Discord rejected the public upload (HTTP {getattr(error, 'status', 'unknown')}, "
+                            f"error code {getattr(error, 'code', 'unknown')}). Check the server's external-app settings and upload limit."
+                        )
+                    try:
+                        await interaction.followup.send(message, ephemeral=True)
+                    except discord.HTTPException:
+                        logger.exception("Could not report the public image upload error")
+                    return False
+                if attempt == 0:
+                    logger.warning(
+                        "Image upload too large for effect %s: %s bytes; retrying with GIF compression (reported limit %s bytes)",
+                        effect_name,
+                        len(data),
+                        limit,
+                    )
+
+        if last_error is not None:
+            logger.error(
+                "Discord refused the generated image after compression for effect %s",
+                effect_name,
+                exc_info=(type(last_error), last_error, last_error.__traceback__),
+            )
+        original_mib = len(data) / (1024 * 1024)
+        limit_mib = limit / (1024 * 1024)
+        if compressed_versions:
+            message = (
+                f"I generated the image, but Discord still rejected it after trying smaller GIF versions. "
+                f"Original size: {original_mib:.1f} MiB; limit reported for this interaction: {limit_mib:.1f} MiB. "
+                "Try a smaller source image or an effect with a smaller output."
+            )
+        else:
+            message = (
+                f"I generated the image, but it is too large for Discord to upload ({original_mib:.1f} MiB; "
+                f"reported limit {limit_mib:.1f} MiB), and automatic GIF compression was unavailable. "
+                "Install Pillow in the Redbot environment and try again, or use a smaller source image."
+            )
+        try:
+            await interaction.followup.send(message, ephemeral=True)
+        except discord.HTTPException:
+            logger.exception("Could not report the image size error")
+        return False
+
+    async def _run_slash_effect(self, interaction: discord.Interaction, effect: str, target: str = "", second_target: str = ""):
+        effect_name = _normalise_effect_name(effect)
+        if effect_name not in IMAGE_EFFECT_SET:
+            matches = [name for name in IMAGE_EFFECTS if effect_name in name or name in effect_name] if effect_name else []
+            suggestions = ", ".join(_effect_label(name) for name in matches[:8])
+            message = "That effect was not found. Choose an effect from slash autocomplete."
+            if suggestions:
+                message += f" Possible matches: {suggestions}."
+            await interaction.response.send_message(message, ephemeral=True)
+            return
+
+        api_key = await self._get_api_key()
+        if not api_key:
+            await interaction.response.send_message(
+                "The bot owner must configure the shared Jeyy API key with `[p]imgmanip setkey YOUR_KEY`.",
+                ephemeral=True,
+            )
+            return
+
+        target = (target or "").strip()
+        second_target = (second_target or "").strip()
+        if effect_name in ("ace", "scrapbook") and not target:
+            await interaction.response.send_message("This effect needs text in the first input field.", ephemeral=True)
+            return
+        if effect_name == "heart_locket" and (not target or not second_target):
+            await interaction.response.send_message(
+                "Heart Locket needs two targets. Enter a user mention, user ID, or image URL in each target field.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        try:
+            if effect_name == "ace":
+                attorneys = ["Jordan Blake", "Alexis Reed", "Taylor Quinn", "Morgan Flynn"]
+                prosecutors = ["Casey Vaughn", "Riley Carter", "Jamie Lee", "Dakota Shore"]
+                user = interaction.user
+                display_name = getattr(user, "display_name", None) or getattr(user, "global_name", None) or user.name
+                params = {
+                    "name": display_name,
+                    "attorney": random.choice(attorneys),
+                    "prosecutor": random.choice(prosecutors),
+                    "side": random.choice(["attorney", "prosecutor"]),
+                    "text": target,
+                }
+            elif effect_name == "scrapbook":
+                params = {"text": target}
+            elif effect_name == "heart_locket":
+                image_one = await self._resolve_slash_image(interaction, target, default_to_author=False)
+                image_two = await self._resolve_slash_image(interaction, second_target, default_to_author=False)
+                if not image_one or not image_two:
+                    await interaction.followup.send(
+                        "I couldn't resolve one of those targets. Use a valid mention, numeric user ID, or HTTP(S) image URL.",
+                        ephemeral=True,
+                    )
+                    return
+                params = {"image_url": image_one, "image_url_2": image_two}
+            else:
+                image_url = await self._resolve_slash_image(interaction, target, default_to_author=True)
+                if not image_url:
+                    await interaction.followup.send(
+                        "I couldn't resolve that target. Use a user mention, numeric user ID, or HTTP(S) image URL.",
+                        ephemeral=True,
+                    )
+                    return
+                params = {"image_url": image_url}
+                if effect_name == "bevel":
+                    params["level"] = random.randint(10, 30)
+                elif effect_name == "boil":
+                    params["level"] = random.randint(1, 5)
+                elif effect_name == "earthquake":
+                    params["level"] = random.randint(1, 10)
+                elif effect_name == "emojify":
+                    params["size"] = random.randint(16, 64)
+                elif effect_name == "glitch":
+                    params["level"] = random.randint(1, 10)
+                elif effect_name == "hearts":
+                    params["rainbow"] = random.choice(["true", "false"])
+                elif effect_name == "minecraft":
+                    params["size"] = random.randint(10, 100)
+                elif effect_name == "shear":
+                    params["axis"] = random.choice(["x", "X", "y", "Y"])
+                    params["x"] = round(random.uniform(-1.0, 1.0), 2)
+                    params["y"] = round(random.uniform(-1.0, 1.0), 2)
+                elif effect_name == "tiles":
+                    params["n_edges"] = random.choice(["3", "4", "5", "6", "7", "8"])
+                elif effect_name == "tunnel":
+                    params["direction"] = random.choice(["h", "v", "c", "r"])
+                elif effect_name == "wave":
+                    params["frequency"] = round(random.uniform(0.01, 0.2), 3)
+                    params["amplitude"] = random.choice(["1", "2", "3", "4", "5"])
+
+            data = await self._fetch(
+                endpoint=f"v2/image/{effect_name}",
+                api_key=api_key,
+                method="GET",
+                params=params,
+            )
+        except Exception:
+            logger.exception("Slash image effect failed: %s", effect_name)
+            await interaction.followup.send(
+                "I couldn't generate that effect. Check your Jeyy API key and try again.",
+                ephemeral=True,
+            )
+            return
+
+        await self._send_slash_result(interaction, effect_name, data)
+
+    @staticmethod
+    def _message_image_url(message: Optional[discord.Message]) -> Optional[str]:
+        if message is None:
+            return None
+        image_extensions = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".bmp", ".tif", ".tiff")
+        for attachment in getattr(message, "attachments", ()):
+            content_type = (getattr(attachment, "content_type", None) or "").casefold()
+            filename = (getattr(attachment, "filename", None) or "").casefold()
+            if content_type.startswith("image/") or filename.endswith(image_extensions):
+                return attachment.url
+        for embed in getattr(message, "embeds", ()):
+            image = getattr(getattr(embed, "image", None), "url", None)
+            if image:
+                return image
+            thumbnail = getattr(getattr(embed, "thumbnail", None), "url", None)
+            if thumbnail:
+                return thumbnail
+        return None
+
+    async def _get_referenced_message(self, ctx: commands.Context) -> Optional[discord.Message]:
+        message = getattr(ctx, "message", None)
+        reference = getattr(message, "reference", None) if message else None
+        if reference is None or not getattr(reference, "message_id", None):
+            return None
+        resolved = getattr(reference, "resolved", None)
+        if isinstance(resolved, discord.Message):
+            return resolved
+        channel_id = getattr(reference, "channel_id", None)
+        channel = self.bot.get_channel(channel_id) if channel_id else None
+        if channel is None:
+            channel = getattr(ctx, "channel", None)
+        if channel is None or not hasattr(channel, "fetch_message"):
+            return None
+        try:
+            return await channel.fetch_message(reference.message_id)
+        except (discord.HTTPException, discord.NotFound, discord.Forbidden):
+            return None
+        except Exception:
+            logger.debug("Could not fetch replied-to message", exc_info=True)
+            return None
+
+    async def _resolve_image_url(
+        self,
+        ctx: commands.Context,
+        target: Optional[Union[discord.Member, discord.User, str]]
+    ) -> Optional[str]:
+        if isinstance(target, (discord.Member, discord.User)):
+            try:
+                return target.display_avatar.url
+            except Exception:
+                return None
+
         if isinstance(target, str):
-            s = target.strip()
-
-            # direct http(s) url
-            if s.lower().startswith("http"):
-                return s
-
-            # mention like <@123...> or <@!123...>
-            if s.startswith("<@") and s.endswith(">"):
-                s = s.strip("<@!>")
-
-            # numeric id: try to resolve user
-            if s.isdigit():
-                user_id = int(s)
-                member = None
-                # try guild member first
-                if ctx.guild:
-                    member = ctx.guild.get_member(user_id)
-                # try cache
-                if not member:
-                    member = self.bot.get_user(user_id)
-                # fetch from API as last resort
-                if not member:
+            value = target.strip()
+            parsed = urlparse(value)
+            if parsed.scheme.casefold() in ("http", "https") and parsed.netloc:
+                return value
+            mention = re.fullmatch(r"<@!?(\d+)>", value)
+            user_id = int(mention.group(1)) if mention else (int(value) if value.isdigit() else None)
+            if user_id is not None:
+                user = ctx.guild.get_member(user_id) if ctx.guild else None
+                if user is None:
+                    user = self.bot.get_user(user_id)
+                if user is None:
                     try:
-                        member = await self.bot.fetch_user(user_id)
+                        user = await self.bot.fetch_user(user_id)
                     except Exception:
-                        member = None
-                if member:
+                        user = None
+                if user is not None:
                     try:
-                        return member.display_avatar.url
+                        return user.display_avatar.url
                     except Exception:
                         return None
+                return None
 
-        # attachments present
-        if ctx.message and ctx.message.attachments:
-            return ctx.message.attachments[0].url
+        referenced = await self._get_referenced_message(ctx)
+        if referenced is not None:
+            image_url = self._message_image_url(referenced)
+            if image_url:
+                return image_url
+            try:
+                return referenced.author.display_avatar.url
+            except Exception:
+                return None
 
-        # fallback to invoking user avatar
+        current_message = getattr(ctx, "message", None)
+        image_url = self._message_image_url(current_message)
+        if image_url:
+            return image_url
+
         try:
             return ctx.author.display_avatar.url
         except Exception:
@@ -126,9 +762,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="blur")
     async def blur(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Blur an image."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Blurring image…")
@@ -149,9 +785,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="balls")
     async def balls(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Balls filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Balls filter…")
@@ -172,9 +808,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="abstract")
     async def abstract(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Abstract v2 filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Abstract v2 filter…")
@@ -195,9 +831,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="3d")
     async def three_d(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply 3D filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying 3D filter…")
@@ -223,9 +859,9 @@ class ImageFilter(BaseCog):
         
         text        The line of dialogue to show in the speech bubble.
         """
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         name = ctx.author.display_name
         attorneys = ["Jordan Blake", "Alexis Reed", "Taylor Quinn", "Morgan Flynn"]
@@ -260,9 +896,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="ads")
     async def ads(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Ads filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Ads filter…")
@@ -283,9 +919,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="bayer")
     async def bayer(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Bayer filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Bayer filter…")
@@ -306,9 +942,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="bevel")
     async def bevel(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Bevel filter with a random level."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -339,9 +975,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="billboard")
     async def billboard(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Billboard filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Billboard filter…")
@@ -362,9 +998,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="blocks")
     async def blocks(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Blocks filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Blocks filter…")
@@ -385,9 +1021,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="boil")
     async def boil(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Boil filter with a random level."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -418,9 +1054,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="bomb")
     async def bomb(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Bomb filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Bomb filter…")
@@ -441,9 +1077,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="bonks")
     async def bonks(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Bonks filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Bonks filter…")
@@ -464,9 +1100,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="bubble")
     async def bubble(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Bubble filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Bubble filter…")
@@ -487,9 +1123,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="burn")
     async def burn(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Burn filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Burn filter…")
@@ -510,9 +1146,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="canny")
     async def canny(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Canny edge-detection filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Canny filter…")
@@ -533,9 +1169,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="cartoon")
     async def cartoon(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Cartoon filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Cartoon filter…")
@@ -556,9 +1192,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="cinema")
     async def cinema(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Cinema filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Cinema filter…")
@@ -579,9 +1215,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="clock")
     async def clock(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Clock filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Clock filter…")
@@ -602,9 +1238,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="cloth")
     async def cloth(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Cloth filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Cloth filter…")
@@ -625,9 +1261,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="console")
     async def console(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Console filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Console filter…")
@@ -648,9 +1284,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="contour")
     async def contour(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Contour filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Contour filter…")
@@ -671,9 +1307,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="cow")
     async def cow(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Cow filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Cow filter…")
@@ -694,9 +1330,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="cracks")
     async def cracks(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Cracks filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Cracks filter…")
@@ -717,9 +1353,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="cube")
     async def cube(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Cube filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Cube filter…")
@@ -740,9 +1376,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="dilate")
     async def dilate(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Dilate filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Dilate filter…")
@@ -763,9 +1399,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="dither")
     async def dither(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Dither filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Dither filter…")
@@ -786,9 +1422,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="dizzy")
     async def dizzy(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Dizzy filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Dizzy filter…")
@@ -809,9 +1445,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="dots")
     async def dots(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Dots filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Dots filter…")
@@ -832,9 +1468,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="earthquake")
     async def earthquake(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Earthquake filter with a random level."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -865,9 +1501,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="emojify")
     async def emojify(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Emojify filter with a random size."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -898,9 +1534,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="endless")
     async def endless(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Endless filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Endless filter…")
@@ -921,9 +1557,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="equations")
     async def equations(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Equations filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Equations filter…")
@@ -985,9 +1621,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="explicit")
     async def explicit(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Explicit filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Explicit filter…")
@@ -1008,9 +1644,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="fall")
     async def fall(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Fall filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Fall filter…")
@@ -1031,9 +1667,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="fan")
     async def fan(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Fan filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Fan filter…")
@@ -1054,9 +1690,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="fire")
     async def fire(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Fire filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Fire filter…")
@@ -1077,9 +1713,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="flag")
     async def flag(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Flag filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Flag filter…")
@@ -1100,9 +1736,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="flush")
     async def flush(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Flush filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Flush filter…")
@@ -1123,9 +1759,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="gallery")
     async def gallery(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Gallery filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Gallery filter…")
@@ -1146,9 +1782,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="gameboy_camera")
     async def gameboy_camera(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Gameboy Camera filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Gameboy Camera filter…")
@@ -1169,9 +1805,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="glitch")
     async def glitch(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Glitch filter with a random level."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1202,9 +1838,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="globe")
     async def globe(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Globe filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Globe filter…")
@@ -1225,9 +1861,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="half_invert")
     async def half_invert(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Half Invert filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Half Invert filter…")
@@ -1248,9 +1884,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="heart_diffraction")
     async def heart_diffraction(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Heart Diffraction filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         await ctx.send("🔄 Applying Heart Diffraction filter…")
@@ -1276,9 +1912,9 @@ class ImageFilter(BaseCog):
         second: Optional[Union[discord.Member, str]] = None,
     ):
         """Apply Heart Locket filter with two images."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         # 1) Gather attachments if no explicit args
         attachment_urls = [att.url for att in ctx.message.attachments]
@@ -1313,9 +1949,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="hearts")
     async def hearts(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Hearts filter with random Rainbow value."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1346,9 +1982,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="infinity")
     async def infinity(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Infinity filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1372,9 +2008,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="ipcam")
     async def ipcam(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Ipcam filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1398,9 +2034,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="kanye")
     async def kanye(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Kanye filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1424,9 +2060,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="knit")
     async def knit(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Knit filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1450,9 +2086,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="lamp")
     async def lamp(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Lamp filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1476,9 +2112,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="laundry")
     async def laundry(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Laundry filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1502,9 +2138,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="layers")
     async def layers(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Layers filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1528,9 +2164,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="letters")
     async def letters(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Letters filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1554,9 +2190,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="lines")
     async def lines(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Lines filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1580,9 +2216,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="liquefy")
     async def liquefy(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Liquefy filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1606,9 +2242,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="logoff")
     async def logoff(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Logoff filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1632,9 +2268,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="lsd")
     async def lsd(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply LSD filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1658,9 +2294,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="magnify")
     async def magnify(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Magnify filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1684,9 +2320,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="matrix")
     async def matrix(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Matrix filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1710,9 +2346,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="melt")
     async def melt(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Melt filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1736,9 +2372,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="minecraft")
     async def minecraft(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Minecraft filter with a random size."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1769,9 +2405,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="neon")
     async def neon(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Neon filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1795,9 +2431,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="optics")
     async def optics(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Optics filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1821,9 +2457,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="painting")
     async def painting(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Painting filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1847,9 +2483,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="paparazzi")
     async def paparazzi(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Paparazzi filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1873,9 +2509,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="patpat")
     async def patpat(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Patpat filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1899,9 +2535,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="pattern")
     async def pattern(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Pattern filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1925,9 +2561,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="phase")
     async def phase(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Phase filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1951,9 +2587,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="phone")
     async def phone(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Phone filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -1977,9 +2613,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="pizza")
     async def pizza(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Pizza filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2003,9 +2639,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="plank")
     async def plank(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Plank filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2029,9 +2665,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="plates")
     async def plates(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Plates filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2055,9 +2691,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="poly")
     async def poly(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Poly filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2081,9 +2717,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="print")
     async def print(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Print filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2107,9 +2743,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="pyramid")
     async def pyramid(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Pyramid filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2133,9 +2769,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="quarter")
     async def quarter(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Quarter filter using the API default size."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2162,9 +2798,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="radiate")
     async def radiate(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Radiate filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2188,9 +2824,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="rain")
     async def rain(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Rain filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2214,9 +2850,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="reflection")
     async def reflection(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Reflection filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2240,9 +2876,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="ripped")
     async def ripped(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Ripped filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2266,9 +2902,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="ripple")
     async def ripple(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Ripple filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2292,9 +2928,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="roll")
     async def roll(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Roll filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2318,9 +2954,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="scrapbook")
     async def scrapbook(self, ctx, *, text: str):
         """Generate a scrapbook-style image from your text."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         if not text:
             return await ctx.send("❌ Please provide some text to generate the scrapbook image.")
@@ -2343,9 +2979,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="sensitive")
     async def sensitive(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Sensitive filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2369,9 +3005,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="shear")
     async def shear(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Shear filter with random axis and offsets."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2405,9 +3041,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="shine")
     async def shine(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Shine filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2431,9 +3067,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="shock")
     async def shock(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Shock filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2457,9 +3093,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="shoot")
     async def shoot(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Shoot filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2483,9 +3119,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="shred")
     async def shred(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Shred filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2509,9 +3145,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="slice")
     async def slice(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Slice filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2535,9 +3171,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="soap")
     async def soap(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Soap filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2561,9 +3197,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="spikes")
     async def spikes(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Spikes filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2587,9 +3223,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="spin")
     async def spin(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Spin filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2613,9 +3249,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="stereo")
     async def stereo(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Stereo filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2639,9 +3275,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="stretch")
     async def stretch(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Stretch filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2665,9 +3301,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="tiles")
     async def tiles(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Tiles filter with a random n_edges."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2697,9 +3333,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="tunnel")
     async def tunnel(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Tunnel filter with a random direction."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2729,9 +3365,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="tv")
     async def tv(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Tv filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2755,9 +3391,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="wall")
     async def wall(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Wall filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2781,9 +3417,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="warp")
     async def warp(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Warp filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2807,9 +3443,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="wave")
     async def wave(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Wave filter with random frequency and amplitude."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2841,9 +3477,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="wiggle")
     async def wiggle(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Wiggle filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2867,9 +3503,9 @@ class ImageFilter(BaseCog):
     @imgmanip.command(name="zonk")
     async def zonk(self, ctx, target: Optional[Union[discord.Member, str]] = None):
         """Apply Zonk filter."""
-        api_key = await self.config.user(ctx.author).api_key()
+        api_key = await self._get_api_key()
         if not api_key:
-            return await ctx.send("❌ Set your API key: `[p]imgmanip setkey YOUR_KEY`.")
+            return await ctx.send("❌ The bot owner must set the shared API key: `[p]imgmanip setkey YOUR_KEY`.")
 
         img_url = await self._resolve_image_url(ctx, target)
         if not img_url:
@@ -2890,5 +3526,16 @@ class ImageFilter(BaseCog):
         fp.seek(0)
         await ctx.send(file=discord.File(fp, "zonk.gif"))
 
-
+@app_commands.context_menu(name="Image Effect")
+@app_commands.allowed_installs(guilds=True, users=True)
+@app_commands.allowed_contexts(guilds=True, dms=True, private_channels=True)
+async def image_effect_context_menu(interaction: discord.Interaction, message: discord.Message):
+    cog = interaction.client.get_cog("ImageFilter")
+    if cog is None:
+        await interaction.response.send_message(
+            "The ImageFilter cog is not currently loaded.",
+            ephemeral=True,
+        )
+        return
+    await cog._handle_message_image_effect(interaction, message)
 
